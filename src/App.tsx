@@ -126,7 +126,7 @@ export const App: React.FC = () => {
   }, []);
 
   const navItems: { id: TabId; label: string; shortcut: string; count?: number }[] = [
-    { id: "today", label: "Hoje", shortcut: "1" },
+    { id: "today", label: "Atividades", shortcut: "1" },
     { id: "inbox", label: "Inbox", shortcut: "2", count: inboxCount },
     { id: "search", label: "Busca", shortcut: "3" },
     { id: "import", label: "Importar", shortcut: "4" },
@@ -138,7 +138,7 @@ export const App: React.FC = () => {
   const getPageTitle = (tab: TabId) => {
     switch (tab) {
       case "today":
-        return "Hoje -- Demandas e Prazos";
+        return "Atividades & Follow-Up";
       case "inbox":
         return "Inbox -- Triagem Rápida";
       case "search":
@@ -157,7 +157,7 @@ export const App: React.FC = () => {
   const getPageSubtitle = (tab: TabId) => {
     switch (tab) {
       case "today":
-        return "Visão consolidada de itens em atraso, para hoje e aguardando retorno.";
+        return "Ordene suas atividades em execução por prioridade e acompanhe retornos de terceiros.";
       case "inbox":
         return "Navegue pelo teclado para classificar contexto, tags e prazos em segundos.";
       case "search":

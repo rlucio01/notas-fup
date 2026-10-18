@@ -1,6 +1,7 @@
 import type { Item, TodayBlocks } from "./types";
 
 export function computeTodayBlocks(items: Item[], todayDateStr: string): TodayBlocks {
+  const executing: Item[] = [];
   const overdue: Item[] = [];
   const today: Item[] = [];
   const waiting: Record<string, Item[]> = {};
@@ -27,6 +28,11 @@ export function computeTodayBlocks(items: Item[], todayDateStr: string): TodayBl
       today.push(item);
     }
 
+    // Executing items: all active open tasks that the user is working on or has to execute
+    if (item.status === "open") {
+      executing.push(item);
+    }
+
     // Waiting items (can also be in overdue/today if they have a date, but are grouped by person)
     if (item.status === "waiting") {
       const person = item.waiting_on ? item.waiting_on.trim() : "Sem responsável";
@@ -38,6 +44,7 @@ export function computeTodayBlocks(items: Item[], todayDateStr: string): TodayBl
   }
 
   return {
+    executing,
     overdue,
     today,
     waiting,

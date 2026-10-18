@@ -177,37 +177,28 @@ pub struct UpdateItem {
 
 // ── Today items ─────────────────────────────────────────────────────────
 
-/// Items for the Today screen: overdue, due today, waiting items due today,
-/// and inbox items. Excludes done/dropped and soft-deleted.
+/// Items for the Today/Execution screen: all active open tasks to be executed,
+/// overdue, waiting items, and inbox items. Excludes done/dropped and soft-deleted.
 pub fn get_today_items(conn: &Connection) -> Result<Vec<Item>> {
-    let today = Utc::now().format("%Y-%m-%d").to_string();
     let sql = format!(
         "SELECT {ITEM_SELECT_COLS}
          FROM items i
          LEFT JOIN contexts c ON i.context_id = c.id
          WHERE i.deleted_at IS NULL
            AND i.status NOT IN ('done', 'dropped')
-           AND (
-               i.status = 'inbox'
-               OR i.due_at <= ?1
-               OR i.followup_at <= ?1
-               OR i.status = 'waiting'
-           )
          ORDER BY
            CASE
-             WHEN i.due_at IS NOT NULL AND i.due_at < ?1 THEN 0
-             WHEN i.followup_at IS NOT NULL AND i.followup_at < ?1 THEN 1
-             WHEN i.due_at = ?1 OR i.followup_at = ?1 THEN 2
-             WHEN i.status = 'waiting' THEN 3
-             WHEN i.status = 'inbox' THEN 4
-             ELSE 5
+             WHEN i.status = 'open' THEN 0
+             WHEN i.status = 'waiting' THEN 1
+             WHEN i.status = 'inbox' THEN 2
+             ELSE 3
            END,
            i.position ASC,
            i.created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
     let items = stmt
-        .query_map([&today], map_item_row)?
+        .query_map([], map_item_row)?
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     Ok(items)

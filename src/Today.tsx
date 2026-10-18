@@ -15,13 +15,14 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const [inboxCount, setInboxCount] = useState<number>(0);
   const [contexts, setContexts] = useState<Context[]>([]);
   const [selectedContext, setSelectedContext] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"all" | "executing" | "waiting">("all");
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Drag and drop state for prioritizing tasks
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dragSection, setDragSection] = useState<"today" | "overdue" | null>(null);
+  const [dragSection, setDragSection] = useState<"executing" | "today" | "overdue" | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -34,7 +35,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
       setAllItems(items);
       setInboxCount(inbox.length);
     } catch (e) {
-      console.error("Erro ao carregar itens de hoje:", e);
+      console.error("Erro ao carregar demandas:", e);
     } finally {
       setLoading(false);
     }
@@ -119,6 +120,10 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     return computed;
   }, [filteredItems, inboxCount]);
 
+  const waitingCount = useMemo(() => {
+    return Object.values(blocks.waiting).reduce((sum, list) => sum + list.length, 0);
+  }, [blocks.waiting]);
+
   const handleToggleDone = async (item: Item) => {
     const newStatus = item.status === "done" ? "open" : "done";
     await updateItem({ id: item.id, status: newStatus });
@@ -138,10 +143,38 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     loadData();
   };
 
-  const handleDrop = async (targetId: string, section: "today" | "overdue") => {
+  const handleMoveToWaiting = async (item: Item) => {
+    const person = window.prompt("Aguardando retorno de quem? (ex: Gustavo, Massao, Cliente)");
+    if (person === null) return;
+    await updateItem({
+      id: item.id,
+      status: "waiting",
+      waiting_on: person.trim() || "Sem responsável",
+    });
+    loadData();
+  };
+
+  const handleResumeExecution = async (item: Item) => {
+    await updateItem({
+      id: item.id,
+      status: "open",
+      waiting_on: null,
+    });
+    loadData();
+  };
+
+  const handleDrop = async (targetId: string, section: "executing" | "today" | "overdue") => {
     if (!draggedId || draggedId === targetId || dragSection !== section) return;
 
-    const list = [...(section === "today" ? blocks.today : blocks.overdue)];
+    let list: Item[] = [];
+    if (section === "executing") {
+      list = [...blocks.executing];
+    } else if (section === "today") {
+      list = [...blocks.today];
+    } else if (section === "overdue") {
+      list = [...blocks.overdue];
+    }
+
     const fromIdx = list.findIndex((i) => i.id === draggedId);
     const toIdx = list.findIndex((i) => i.id === targetId);
     if (fromIdx >= 0 && toIdx >= 0) {
@@ -163,11 +196,12 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const renderItemRow = (
     item: Item,
     showOverdueBadge = false,
-    section?: "today" | "overdue" | "waiting"
+    section?: "executing" | "today" | "overdue" | "waiting",
+    priorityIndex?: number
   ) => {
     const isDone = item.status === "done";
     const dateLabel = item.due_at || item.followup_at;
-    const isDraggable = section === "today" || section === "overdue";
+    const isDraggable = section === "executing" || section === "today" || section === "overdue";
     const isBeingDragged = draggedId === item.id;
     const isDragOver = dragOverId === item.id && draggedId !== item.id;
 
@@ -209,7 +243,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         {isDraggable && (
           <span
             className="drag-handle"
-            title="Arraste para priorizar acima ou abaixo"
+            title="Arraste para definir a ordem de prioridade"
             onClick={(e) => e.stopPropagation()}
           >
             <GripIcon size={14} />
@@ -231,6 +265,17 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           title="Clique para editar ou reclassificar"
         >
           <div className="item-title-line">
+            {priorityIndex !== undefined && (
+              <span
+                className={`badge badge-priority ${priorityIndex === 0 ? "top-focus" : ""}`}
+                title={`Prioridade #${priorityIndex + 1}${
+                  priorityIndex === 0 ? " (Foco Principal)" : ""
+                }`}
+              >
+                #{priorityIndex + 1}
+              </span>
+            )}
+
             <span className={`item-title ${isDone ? "done" : ""}`}>
               {item.title}
             </span>
@@ -295,6 +340,26 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         </div>
 
         <div className="item-actions">
+          {item.status === "open" && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => handleMoveToWaiting(item)}
+              title="Colocar demanda em espera de terceiros"
+            >
+              Aguardar...
+            </button>
+          )}
+
+          {item.status === "waiting" && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => handleResumeExecution(item)}
+              title="Retomar demanda para minha execução ativa"
+            >
+              Assumir / Executar
+            </button>
+          )}
+
           {item.url && (
             <a
               href={item.url}
@@ -307,6 +372,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
               <span>Link</span>
             </a>
           )}
+
           <button
             className="btn btn-secondary btn-sm btn-icon"
             onClick={() => handlePostponeTomorrow(item)}
@@ -323,17 +389,45 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   if (loading) {
     return (
       <div className="page-body">
-        <div className="empty-state">Carregando itens de hoje...</div>
+        <div className="empty-state">Carregando atividades e demandas...</div>
       </div>
     );
   }
 
-  const hasAnyItems =
-    allItems.length > 0 ||
-    blocks.inbox_count > 0;
+  const hasAnyItems = allItems.length > 0 || blocks.inbox_count > 0;
 
   return (
     <div className="page-body">
+      {/* Abas de Modo de Visão: Em Execução / Aguardando / Geral */}
+      <div className="view-mode-tabs">
+        <button
+          type="button"
+          className={`view-mode-tab ${viewMode === "all" ? "active" : ""}`}
+          onClick={() => setViewMode("all")}
+        >
+          <span>Visão Geral</span>
+          <span className="tab-badge">{blocks.executing.length + waitingCount}</span>
+        </button>
+
+        <button
+          type="button"
+          className={`view-mode-tab ${viewMode === "executing" ? "active" : ""}`}
+          onClick={() => setViewMode("executing")}
+        >
+          <span>Em Execução (Prioridade)</span>
+          <span className="tab-badge">{blocks.executing.length}</span>
+        </button>
+
+        <button
+          type="button"
+          className={`view-mode-tab ${viewMode === "waiting" ? "active" : ""}`}
+          onClick={() => setViewMode("waiting")}
+        >
+          <span>Aguardando Retorno (Follow-Up)</span>
+          <span className="tab-badge">{waitingCount}</span>
+        </button>
+      </div>
+
       {/* Barra de Filtro por Contexto */}
       {contextFilterList.length > 0 && (
         <div className="context-filter-bar">
@@ -396,8 +490,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         </div>
       )}
 
-      {/* Bloco 1: Atrasados */}
-      {blocks.overdue.length > 0 && (
+      {/* Bloco: Demandas Atrasadas (se houver) */}
+      {(viewMode === "all" || viewMode === "executing") && blocks.overdue.length > 0 && (
         <div className="card">
           <div className="card-header">
             <div className="card-title" style={{ color: "var(--danger)" }}>
@@ -413,91 +507,105 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         </div>
       )}
 
-      {/* Bloco 2: Hoje */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">
-            <span>Hoje</span>
-            <span className="card-count">{blocks.today.length}</span>
-          </div>
-        </div>
-        {blocks.today.length === 0 ? (
-          <div className="empty-state">
-            {selectedContext === "all"
-              ? "Nenhuma demanda agendada para hoje."
-              : "Nenhuma demanda agendada para hoje neste contexto."}
-          </div>
-        ) : (
-          <div className="item-list">
-            {blocks.today.map((item) => renderItemRow(item, false, "today"))}
-          </div>
-        )}
-      </div>
-
-      {/* Bloco 3: Aguardando (por pessoa) */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">
-            <span>Aguardando Retorno</span>
-            <span className="card-count">
-              {Object.values(blocks.waiting).reduce(
-                (sum, list) => sum + list.length,
-                0,
-              )}
-            </span>
-          </div>
-        </div>
-
-        {Object.keys(blocks.waiting).length === 0 ? (
-          <div className="empty-state">
-            {selectedContext === "all"
-              ? "Nenhum item aguardando resposta de terceiros."
-              : "Nenhum item aguardando resposta de terceiros neste contexto."}
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {Object.entries(blocks.waiting).map(([person, items]) => (
-              <div key={person}>
-                <div
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "var(--text-secondary)",
-                    marginBottom: "8px",
-                  }}
-                >
-                  {person} ({items.length})
-                </div>
-                <div className="item-list">
-                  {items.map((item) => renderItemRow(item, false, "waiting"))}
-                </div>
+      {/* Bloco Principal: Atividades em Execução (Ordem de Prioridade) */}
+      {(viewMode === "all" || viewMode === "executing") && (
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <div className="card-title">
+                <span>Atividades em Execução (Ordem de Prioridade)</span>
+                <span className="card-count">{blocks.executing.length}</span>
               </div>
-            ))}
+              <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                Arraste os itens pelo ícone à esquerda para ordenar por prioridade. O item #1 é seu foco principal.
+              </div>
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Bloco 4: Inbox para processar */}
-      <div className="card" style={{ background: "var(--accent-light)" }}>
-        <div className="card-header">
-          <div className="card-title">
-            <span>Inbox para Processar</span>
-            <span className="card-count">{blocks.inbox_count}</span>
-          </div>
-          {blocks.inbox_count > 0 && (
-            <button className="btn btn-primary btn-sm" onClick={onNavigateToInbox}>
-              Processar Inbox (teclado)
-            </button>
+          {blocks.executing.length === 0 ? (
+            <div className="empty-state">
+              {selectedContext === "all"
+                ? "Nenhuma atividade em execução no momento. Use Nova Nota (Ctrl+Alt+N) ou retire itens de Aguardando Retorno."
+                : "Nenhuma atividade em execução para este contexto."}
+            </div>
+          ) : (
+            <div className="item-list">
+              {blocks.executing.map((item, idx) =>
+                renderItemRow(item, false, "executing", idx)
+              )}
+            </div>
           )}
         </div>
-        <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-          {blocks.inbox_count === 0
-            ? "Inbox zerado. Pressione Ctrl+Alt+N a qualquer momento para capturar novas demandas."
-            : `Você tem ${blocks.inbox_count} ${
-                blocks.inbox_count === 1 ? "item pendente" : "itens pendentes"
-              } para categorizar.`}
-        </p>
-      </div>
+      )}
+
+      {/* Bloco: Aguardando Retorno (por pessoa) */}
+      {(viewMode === "all" || viewMode === "waiting") && (
+        <div className="card">
+          <div className="card-header">
+            <div>
+              <div className="card-title">
+                <span>Aguardando Retorno (Follow-Up de Terceiros)</span>
+                <span className="card-count">{waitingCount}</span>
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+                Demandas sob responsabilidade de terceiros. Clique em &quot;Assumir / Executar&quot; para puxar de volta à sua fila.
+              </div>
+            </div>
+          </div>
+
+          {waitingCount === 0 ? (
+            <div className="empty-state">
+              {selectedContext === "all"
+                ? "Nenhum item aguardando resposta de terceiros."
+                : "Nenhum item aguardando resposta de terceiros neste contexto."}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              {Object.entries(blocks.waiting).map(([person, items]) => (
+                <div key={person}>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "var(--text-secondary)",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    {person} ({items.length})
+                  </div>
+                  <div className="item-list">
+                    {items.map((item) => renderItemRow(item, false, "waiting"))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Bloco: Inbox para processar */}
+      {viewMode === "all" && (
+        <div className="card" style={{ background: "var(--accent-light)" }}>
+          <div className="card-header">
+            <div className="card-title">
+              <span>Inbox para Processar</span>
+              <span className="card-count">{blocks.inbox_count}</span>
+            </div>
+            {blocks.inbox_count > 0 && (
+              <button className="btn btn-primary btn-sm" onClick={onNavigateToInbox}>
+                Processar Inbox (teclado)
+              </button>
+            )}
+          </div>
+          <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+            {blocks.inbox_count === 0
+              ? "Inbox zerado. Pressione Ctrl+Alt+N a qualquer momento para capturar novas demandas."
+              : `Você tem ${blocks.inbox_count} ${
+                  blocks.inbox_count === 1 ? "item pendente" : "itens pendentes"
+                } para categorizar.`}
+          </p>
+        </div>
+      )}
 
       {!hasAnyItems && (
         <div className="empty-state">

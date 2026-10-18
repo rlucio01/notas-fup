@@ -63,6 +63,7 @@ export interface ProposedItem {
 }
 
 export interface TodayBlocks {
+  executing: Item[];
   overdue: Item[];
   today: Item[];
   waiting: Record<string, Item[]>;
