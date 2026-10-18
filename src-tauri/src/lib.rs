@@ -339,6 +339,33 @@ fn get_active_app() -> Option<String> {
     active_app::get_foreground_window_title()
 }
 
+#[tauri::command]
+fn download_and_install_update(url: String) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        let safe_url = url.replace('\'', "''");
+        let ps_script = format!(
+            "$temp = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'NotasFUP_setup_update.exe'); \
+             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
+             (New-Object System.Net.WebClient).DownloadFile('{safe_url}', $temp); \
+             Start-Process $temp;"
+        );
+
+        Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+            .spawn()
+            .map_err(|e| format!("Falha ao iniciar download da atualização: {e}"))?;
+
+        Ok("Download iniciado e instalador em execução".to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = url;
+        Err("Atualização automática direta disponível apenas para Windows".to_string())
+    }
+}
+
 // ── Application Entry Point ──────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -406,6 +433,7 @@ pub fn run() {
             trigger_followup_alerts,
             send_test_notification_cmd,
             sync_remote_items_cmd,
+            download_and_install_update,
         ])
         .setup(|app| {
             // 1. Initialize SQLite database

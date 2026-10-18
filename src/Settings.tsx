@@ -6,11 +6,15 @@ import {
   deleteContext,
   sendTestNotification,
   triggerFollowupAlerts,
+  checkLatestRelease,
+  downloadAndInstallUpdate,
+  type GitHubReleaseInfo,
 } from "./commands";
 import ThemeToggle from "./ThemeToggle";
 import { PencilIcon, TrashIcon, CheckIcon, XIcon, LinkIcon } from "./Icons";
 import { isTauri, syncWithCloud, getCloudConfig, CLOUD_CONFIG_KEY } from "./cloud-sync";
 import type { Context, AppConfig } from "./types";
+import pkg from "../package.json";
 
 interface SettingsProps {
   theme?: "dark" | "light";
@@ -60,6 +64,65 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
+  // Updater state
+  const currentVersion = pkg.version;
+  const [releaseInfo, setReleaseInfo] = useState<GitHubReleaseInfo | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  const [hasCheckedUpdate, setHasCheckedUpdate] = useState(false);
+
+  const compareSemver = (v1: string, v2: string) => {
+    const s1 = v1.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+    const s2 = v2.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(s1.length, s2.length); i++) {
+      const num1 = s1[i] || 0;
+      const num2 = s2[i] || 0;
+      if (num1 > num2) return 1;
+      if (num1 < num2) return -1;
+    }
+    return 0;
+  };
+
+  const handleCheckUpdate = async (manual: boolean = false) => {
+    setCheckingUpdate(true);
+    setUpdateMsg(null);
+    try {
+      const info = await checkLatestRelease();
+      setReleaseInfo(info);
+      setHasCheckedUpdate(true);
+      if (manual && info) {
+        const isNewer = compareSemver(info.tag_name, currentVersion) > 0;
+        if (!isNewer) {
+          setUpdateMsg(`Você já está na versão mais recente (v${currentVersion})!`);
+        }
+      }
+    } catch {
+      if (manual) {
+        setUpdateMsg("Não foi possível verificar atualizações no momento.");
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!releaseInfo?.installer_url) {
+      window.open(releaseInfo?.html_url || "https://github.com/rlucio01/notas-fup/releases", "_blank");
+      return;
+    }
+    setUpdating(true);
+    setUpdateMsg(isTauri() ? "Baixando instalador e iniciando atualização..." : "Iniciando download do instalador...");
+    try {
+      const res = await downloadAndInstallUpdate(releaseInfo.installer_url);
+      setUpdateMsg(res);
+    } catch (err: any) {
+      setUpdateMsg(`Erro ao atualizar: ${err?.message || err}`);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleManualSync = async () => {
     setSyncing(true);
     setSyncMsg("Sincronizando com Cloudflare D1...");
@@ -85,6 +148,7 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
 
   useEffect(() => {
     getContexts().then(setContexts);
+    handleCheckUpdate(false);
   }, []);
 
   const updateConfig = (patch: Partial<AppConfig>) => {
@@ -422,16 +486,6 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
                   @{ctx.name}
                 </span>
 
-                <span
-                  style={{
-                    fontSize: "11px",
-                    color: ctx.sync_enabled ? "var(--success-text)" : "var(--text-muted)",
-                    marginRight: "4px",
-                  }}
-                >
-                  {ctx.sync_enabled ? "Sincronização Ativa" : "Local apenas"}
-                </span>
-
                 <div style={{ display: "flex", gap: "6px" }}>
                   <button
                     type="button"
@@ -593,15 +647,157 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
         </div>
       </div>
 
-      {/* Sobre e Memória */}
+      {/* Sobre & Atualizações */}
       <div className="card">
-        <div className="card-header">
-          <span className="card-title">Sobre e Arquitetura</span>
+        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <img src="/favicon.png" width="28" height="28" alt="Notas FUP Logo" style={{ borderRadius: "6px" }} />
+            <div>
+              <span className="card-title">Sobre & Atualizações</span>
+              <span className="card-desc">Sincronizado diretamente com os lançamentos oficiais do GitHub</span>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span className="badge badge-info" style={{ fontWeight: 600 }}>
+              v{currentVersion}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => handleCheckUpdate(true)}
+              disabled={checkingUpdate || updating}
+              title="Buscar nova versão no repositório do GitHub"
+            >
+              {checkingUpdate ? "Verificando..." : "Verificar Atualizações"}
+            </button>
+          </div>
         </div>
-        <div style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-          <p><strong>Notas FUP</strong> versão 0.1.0 (MVP)</p>
-          <p>Desenvolvido com Tauri 2, React 19 e SQLite FTS5 local-first.</p>
-          <p>O aplicativo reside na bandeja consumindo menos de 10 MB de RAM em repouso. Ao fechar a janela, o WebView2 é completamente destruído para liberar memória imediatamente.</p>
+
+        {/* Update status message */}
+        {updateMsg && (
+          <div
+            style={{
+              marginTop: "12px",
+              fontSize: "12px",
+              padding: "8px 12px",
+              borderRadius: "6px",
+              backgroundColor: updateMsg.includes("Erro")
+                ? "rgba(239, 68, 68, 0.15)"
+                : updateMsg.includes("iniciado") || updateMsg.includes("sucesso")
+                ? "rgba(34, 197, 94, 0.15)"
+                : "rgba(59, 130, 246, 0.15)",
+              color: updateMsg.includes("Erro")
+                ? "var(--danger)"
+                : updateMsg.includes("iniciado") || updateMsg.includes("sucesso")
+                ? "var(--success)"
+                : "var(--accent)",
+            }}
+          >
+            {updateMsg}
+          </div>
+        )}
+
+        {/* New Release Available Banner */}
+        {releaseInfo && compareSemver(releaseInfo.tag_name, currentVersion) > 0 && (
+          <div
+            style={{
+              marginTop: "14px",
+              padding: "14px",
+              borderRadius: "8px",
+              border: "1px solid var(--accent)",
+              background: "rgba(59, 130, 246, 0.08)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span className="badge badge-success" style={{ fontSize: "11px", fontWeight: 600 }}>
+                  Nova versão disponível: {releaseInfo.tag_name}
+                </span>
+                <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                  Publicada em {new Date(releaseInfo.published_at).toLocaleDateString("pt-BR")}
+                </span>
+              </div>
+              <a
+                href={releaseInfo.html_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: "11px", color: "var(--accent)", textDecoration: "none" }}
+              >
+                Ver notas da release no GitHub &rarr;
+              </a>
+            </div>
+
+            <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
+              {releaseInfo.name}
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleInstallUpdate}
+                disabled={updating}
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                {updating ? (
+                  "Instalando..."
+                ) : (
+                  <>
+                    <span>Instalar Atualização Agora ({releaseInfo.tag_name})</span>
+                  </>
+                )}
+              </button>
+
+              <a
+                href={releaseInfo.html_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary btn-sm"
+                style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+              >
+                Abrir no GitHub
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* Up-to-date state badge when checked */}
+        {hasCheckedUpdate && releaseInfo && compareSemver(releaseInfo.tag_name, currentVersion) <= 0 && !updateMsg && (
+          <div
+            style={{
+              marginTop: "12px",
+              fontSize: "12px",
+              color: "var(--success)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--success)" }} />
+            <span>Você está utilizando a versão mais recente do Notas FUP (v{currentVersion}).</span>
+          </div>
+        )}
+
+        <div style={{ marginTop: "14px", borderTop: "1px solid var(--border-color)", paddingTop: "12px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+          <p>
+            <strong>Notas FUP</strong> versão <strong>v{currentVersion}</strong> &bull; Desenvolvido com Tauri 2, React 19 e SQLite FTS5 local-first.
+          </p>
+          <p>
+            O aplicativo reside na bandeja consumindo menos de 10 MB de RAM em repouso. Ao fechar a janela, o WebView2 é completamente destruído para liberar memória imediatamente.
+          </p>
+          <div style={{ marginTop: "6px" }}>
+            <a
+              href="https://github.com/rlucio01/notas-fup/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--accent)", textDecoration: "none", fontSize: "11px" }}
+            >
+              Acessar Repositório & Releases no GitHub &rarr;
+            </a>
+          </div>
         </div>
       </div>
     </div>

@@ -363,3 +363,46 @@ export async function sendTestNotification(): Promise<void> {
     }
   }
 }
+
+export interface GitHubReleaseInfo {
+  tag_name: string;
+  name: string;
+  html_url: string;
+  published_at: string;
+  body: string;
+  installer_url?: string;
+  installer_size?: number;
+}
+
+export async function checkLatestRelease(): Promise<GitHubReleaseInfo | null> {
+  try {
+    const res = await fetch("https://api.github.com/repos/rlucio01/notas-fup/releases/latest", {
+      headers: { Accept: "application/vnd.github.v3+json" },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const exeAsset = data.assets?.find((a: any) => a.name?.endsWith(".exe"));
+    return {
+      tag_name: data.tag_name,
+      name: data.name,
+      html_url: data.html_url,
+      published_at: data.published_at,
+      body: data.body,
+      installer_url: exeAsset?.browser_download_url,
+      installer_size: exeAsset?.size,
+    };
+  } catch (err) {
+    console.error("Erro ao verificar release no GitHub:", err);
+    return null;
+  }
+}
+
+export async function downloadAndInstallUpdate(installerUrl: string): Promise<string> {
+  if (isTauri()) {
+    return await invoke<string>("download_and_install_update", { url: installerUrl });
+  } else {
+    window.open(installerUrl, "_blank");
+    return "Download do instalador iniciado";
+  }
+}
+
