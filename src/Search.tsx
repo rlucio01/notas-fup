@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { searchItems, getContexts, updateItem } from "./commands";
 import { EditModal } from "./EditModal";
-import { PencilIcon, LinkIcon } from "./Icons";
+import { PencilIcon, LinkIcon, PaperclipIcon } from "./Icons";
 import type { Item, Context } from "./types";
 
 export const Search: React.FC = () => {
@@ -226,9 +226,10 @@ export const Search: React.FC = () => {
                     {item.attachment_count !== undefined && item.attachment_count > 0 && (
                       <span
                         className="badge badge-attachment"
-                        title={`${item.attachment_count} print(s) anexado(s)`}
+                        title={`${item.attachment_count} anexo(s)`}
                       >
-                        Print ({item.attachment_count})
+                        <PaperclipIcon size={11} />
+                        {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
                       </span>
                     )}
                   </div>

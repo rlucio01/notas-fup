@@ -835,22 +835,32 @@ body, html, #root {
   border-color: var(--accent);
 }
 
-/* ── Attachment & Print Styles ─────────────────────────── */
+/* ── Attachment & File Styles ─────────────────────────── */
 .badge-attachment {
   background: var(--purple-light);
   color: var(--purple-text);
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .attachment-dropzone {
   border: 1px dashed var(--border-color);
   border-radius: 8px;
-  padding: 12px;
+  padding: 14px;
   background: var(--bg-hover);
   min-height: 80px;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.attachment-dropzone.dragover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .attachment-hint {
@@ -862,7 +872,7 @@ body, html, #root {
 
 .attachment-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 10px;
 }
 
@@ -872,21 +882,58 @@ body, html, #root {
   overflow: hidden;
   border: 1px solid var(--border-color);
   background: var(--bg-card);
-  height: 95px;
+  height: 105px;
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .attachment-card:hover {
   transform: translateY(-2px);
   border-color: var(--accent);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
 .attachment-thumb {
   width: 100%;
-  height: 100%;
+  height: 76px;
   object-fit: cover;
   display: block;
+}
+
+.attachment-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 6px;
+  background: var(--bg-hover);
+  font-size: 10px;
+  color: var(--text-secondary);
+  height: 28px;
+  border-top: 1px solid var(--border-color);
+}
+
+.attachment-card-size {
+  font-weight: 500;
+}
+
+.attachment-download-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.attachment-download-btn:hover {
+  color: var(--accent);
+  background: var(--bg-card);
 }
 
 .attachment-delete-btn {
@@ -906,10 +953,87 @@ body, html, #root {
   font-size: 14px;
   font-weight: 700;
   transition: background 0.15s ease;
+  z-index: 5;
 }
 
 .attachment-delete-btn:hover {
   background: var(--danger);
+}
+
+.attachment-delete-btn.inline {
+  position: static;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  width: 22px;
+  height: 22px;
+}
+
+.attachment-delete-btn.inline:hover {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+/* Document & General File Cards */
+.attachment-file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  min-height: 58px;
+  position: relative;
+}
+
+.attachment-file-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.file-badge-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+  text-align: center;
+  min-width: 38px;
+}
+
+.file-card-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.file-card-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-card-size {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.file-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 /* Lightbox */
@@ -972,18 +1096,19 @@ body, html, #root {
 .theme-toggle-btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 20px;
-  padding: 4px 10px 4px 5px;
+  border-radius: 50%;
+  padding: 0;
   cursor: pointer;
   user-select: none;
-  font-size: 12px;
-  font-weight: 500;
   color: var(--text-secondary);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
 }
 
 .theme-toggle-btn:hover {
@@ -994,19 +1119,19 @@ body, html, #root {
 }
 
 .theme-toggle-btn:active {
-  transform: translateY(0px) scale(0.97);
+  transform: translateY(0px) scale(0.94);
 }
 
 .theme-toggle-track {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--border-color);
+  border: 1px solid transparent;
   transition: background 0.3s ease, border-color 0.3s ease;
 }
 

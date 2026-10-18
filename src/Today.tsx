@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getTodayItems, getInboxItems, updateItem, getContexts, reorderItems } from "./commands";
 import { computeTodayBlocks } from "./today-blocks";
 import { EditModal } from "./EditModal";
-import { PencilIcon, CalendarIcon, LinkIcon, GripIcon } from "./Icons";
+import { PencilIcon, CalendarIcon, LinkIcon, GripIcon, PaperclipIcon } from "./Icons";
 import type { Item, TodayBlocks, Context } from "./types";
 
 interface TodayProps {
@@ -242,9 +242,10 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
             {item.attachment_count !== undefined && item.attachment_count > 0 && (
               <span
                 className="badge badge-attachment"
-                title={`${item.attachment_count} print(s) anexado(s)`}
+                title={`${item.attachment_count} anexo(s)`}
               >
-                Print ({item.attachment_count})
+                <PaperclipIcon size={11} />
+                {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
               </span>
             )}
           </div>

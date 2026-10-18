@@ -1,7 +1,64 @@
 import React, { useState, useEffect } from "react";
 import { updateItem, createContext, getItemAttachments, addAttachment, deleteAttachment } from "./commands";
-import { PencilIcon } from "./Icons";
+import { PencilIcon, PaperclipIcon, DownloadIcon } from "./Icons";
 import type { Item, Context, ItemStatus, Attachment } from "./types";
+
+const isImageAttachment = (att: Attachment): boolean => {
+  if (att.mime_type && att.mime_type.startsWith("image/")) return true;
+  const ext = (att.filename || "").split(".").pop()?.toLowerCase();
+  return ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico"].includes(ext || "");
+};
+
+const getFileBadgeInfo = (filename: string | null) => {
+  const ext = (filename || "").split(".").pop()?.toUpperCase() || "ARQ";
+  switch (ext) {
+    case "PDF":
+      return { label: "PDF", bg: "rgba(239, 68, 68, 0.15)", color: "#ef4444", border: "rgba(239, 68, 68, 0.3)" };
+    case "DOC":
+    case "DOCX":
+      return { label: "DOC", bg: "rgba(37, 99, 235, 0.15)", color: "#3b82f6", border: "rgba(37, 99, 235, 0.3)" };
+    case "XLS":
+    case "XLSX":
+    case "CSV":
+      return { label: ext === "CSV" ? "CSV" : "XLS", bg: "rgba(22, 163, 74, 0.15)", color: "#22c55e", border: "rgba(22, 163, 74, 0.3)" };
+    case "PPT":
+    case "PPTX":
+      return { label: "PPT", bg: "rgba(234, 88, 12, 0.15)", color: "#f97316", border: "rgba(234, 88, 12, 0.3)" };
+    case "ZIP":
+    case "RAR":
+    case "7Z":
+    case "TAR":
+    case "GZ":
+      return { label: "ZIP", bg: "rgba(147, 51, 234, 0.15)", color: "#a855f7", border: "rgba(147, 51, 234, 0.3)" };
+    case "TXT":
+    case "MD":
+    case "LOG":
+    case "JSON":
+    case "XML":
+    case "SQL":
+      return { label: ext, bg: "rgba(100, 116, 139, 0.15)", color: "#94a3b8", border: "rgba(100, 116, 139, 0.3)" };
+    default:
+      return { label: ext.slice(0, 4), bg: "rgba(99, 102, 241, 0.15)", color: "#818cf8", border: "rgba(99, 102, 241, 0.3)" };
+  }
+};
+
+const formatFileSize = (base64Data: string): string => {
+  const commaIdx = base64Data.indexOf(",");
+  const base64Len = commaIdx !== -1 ? base64Data.length - commaIdx - 1 : base64Data.length;
+  const bytes = Math.floor((base64Len * 3) / 4);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const handleDownloadAttachment = (att: Attachment) => {
+  const a = document.createElement("a");
+  a.href = att.data;
+  a.download = att.filename || "anexo";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+};
 
 interface EditModalProps {
   item: Item;
@@ -30,6 +87,7 @@ export const EditModal: React.FC<EditModalProps> = ({
   const [ticketRef, setTicketRef] = useState(item.ticket_ref || "");
   const [url, setUrl] = useState(item.url || "");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -40,9 +98,43 @@ export const EditModal: React.FC<EditModalProps> = ({
       .catch((err) => console.error("Erro ao carregar anexos:", err));
   }, [item.id]);
 
-  // Listen for paste (Ctrl+V) anywhere in modal for images/prints
+  const processFiles = (files: FileList | File[]) => {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file) continue;
+
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const dataUrl = evt.target?.result as string;
+        if (dataUrl) {
+          try {
+            const isImg = file.type?.startsWith("image/");
+            const fallbackName = isImg ? `print_${Date.now()}.png` : `anexo_${Date.now()}`;
+            const created = await addAttachment(
+              item.id,
+              dataUrl,
+              file.type || "application/octet-stream",
+              file.name || fallbackName
+            );
+            setAttachments((prev) => [...prev, created]);
+          } catch (err) {
+            console.error("Erro ao salvar anexo:", err);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Listen for paste (Ctrl+V) anywhere in modal for images/prints or files
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
+      const files = e.clipboardData?.files;
+      if (files && files.length > 0) {
+        processFiles(files);
+        return;
+      }
+
       const clipItems = e.clipboardData?.items;
       if (!clipItems) return;
 
@@ -50,26 +142,9 @@ export const EditModal: React.FC<EditModalProps> = ({
         const clip = clipItems[i];
         if (clip.type.indexOf("image") !== -1) {
           const file = clip.getAsFile();
-          if (!file) continue;
-
-          const reader = new FileReader();
-          reader.onload = async (evt) => {
-            const dataUrl = evt.target?.result as string;
-            if (dataUrl) {
-              try {
-                const created = await addAttachment(
-                  item.id,
-                  dataUrl,
-                  file.type || "image/png",
-                  `print_${Date.now()}.png`
-                );
-                setAttachments((prev) => [...prev, created]);
-              } catch (err) {
-                console.error("Erro ao salvar print anexado:", err);
-              }
-            }
-          };
-          reader.readAsDataURL(file);
+          if (file) {
+            processFiles([file]);
+          }
         }
       }
     };
@@ -96,28 +171,31 @@ export const EditModal: React.FC<EditModalProps> = ({
   }, [title, body, contextId, tags, status, waitingOn, dueAt, followupAt, ticketRef, url, newContextName, isCreatingContext, lightboxImage]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const dataUrl = evt.target?.result as string;
-      if (dataUrl) {
-        try {
-          const created = await addAttachment(
-            item.id,
-            dataUrl,
-            file.type || "image/png",
-            file.name || `print_${Date.now()}.png`
-          );
-          setAttachments((prev) => [...prev, created]);
-        } catch (err) {
-          console.error("Erro ao anexar arquivo:", err);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(e.target.files);
+    }
     e.target.value = "";
+  };
+
+  const handleDropFiles = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
   };
 
   const handleDeleteAttachment = async (attId: string) => {
@@ -125,7 +203,7 @@ export const EditModal: React.FC<EditModalProps> = ({
       await deleteAttachment(attId, item.id);
       setAttachments((prev) => prev.filter((a) => a.id !== attId));
     } catch (err) {
-      console.error("Erro ao excluir print:", err);
+      console.error("Erro ao excluir anexo:", err);
     }
   };
 
@@ -416,52 +494,134 @@ export const EditModal: React.FC<EditModalProps> = ({
             />
           </div>
 
-          {/* Prints e Capturas de Tela */}
+          {/* Anexos e Documentos */}
           <div className="form-group">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label className="form-label">
-                Prints e Anotações Visuais ({attachments.length})
+              <label className="form-label" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <PaperclipIcon size={12} />
+                Anexos e Documentos ({attachments.length})
               </label>
-              <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer", margin: 0 }}>
-                + Anexar Imagem
+              <label
+                className="btn btn-secondary btn-sm"
+                style={{ cursor: "pointer", margin: 0, display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <PaperclipIcon size={12} />
+                <span>+ Anexar Arquivo</span>
                 <input
                   type="file"
-                  accept="image/*"
+                  multiple
                   style={{ display: "none" }}
                   onChange={handleFileInput}
                 />
               </label>
             </div>
 
-            <div className="attachment-dropzone">
+            <div
+              className={`attachment-dropzone ${isDragging ? "dragover" : ""}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDropFiles}
+            >
               {attachments.length === 0 ? (
                 <div className="attachment-hint">
-                  Tire um print com <span className="kbd-badge">Win + Shift + S</span> ou <span className="kbd-badge">PrtScn</span> e pressione <span className="kbd-badge">Ctrl + V</span> aqui para colar diretamente.
+                  <div>Arraste qualquer arquivo aqui (PDF, Word, Excel, PowerPoint, imagens, etc.)</div>
+                  <div style={{ marginTop: "4px" }}>
+                    ou cole prints com <span className="kbd-badge">Ctrl + V</span>, ou use o botão <strong>+ Anexar Arquivo</strong>.
+                  </div>
                 </div>
               ) : (
                 <div className="attachment-grid">
-                  {attachments.map((att) => (
-                    <div key={att.id} className="attachment-card">
-                      <img
-                        src={att.data}
-                        alt={att.filename || "print"}
-                        className="attachment-thumb"
-                        onClick={() => setLightboxImage(att.data)}
-                        title="Clique para ampliar em tela cheia"
-                      />
-                      <button
-                        type="button"
-                        className="attachment-delete-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteAttachment(att.id);
-                        }}
-                        title="Excluir print"
+                  {attachments.map((att) => {
+                    const isImg = isImageAttachment(att);
+                    const badge = getFileBadgeInfo(att.filename);
+                    const sizeText = formatFileSize(att.data);
+
+                    if (isImg) {
+                      return (
+                        <div key={att.id} className="attachment-card" title={att.filename || "Imagem"}>
+                          <img
+                            src={att.data}
+                            alt={att.filename || "print"}
+                            className="attachment-thumb"
+                            onClick={() => setLightboxImage(att.data)}
+                          />
+                          <div className="attachment-card-footer">
+                            <span className="attachment-card-size">{sizeText}</span>
+                            <button
+                              type="button"
+                              className="attachment-download-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadAttachment(att);
+                              }}
+                              title="Baixar imagem"
+                            >
+                              <DownloadIcon size={11} />
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            className="attachment-delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAttachment(att.id);
+                            }}
+                            title="Excluir anexo"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={att.id}
+                        className="attachment-file-card"
+                        onClick={() => handleDownloadAttachment(att)}
+                        title={`Clique para baixar/abrir: ${att.filename || "Arquivo"}`}
                       >
-                        &times;
-                      </button>
-                    </div>
-                  ))}
+                        <div
+                          className="file-badge-pill"
+                          style={{
+                            background: badge.bg,
+                            color: badge.color,
+                            borderColor: badge.border,
+                          }}
+                        >
+                          {badge.label}
+                        </div>
+                        <div className="file-card-info">
+                          <span className="file-card-name">{att.filename || "documento"}</span>
+                          <span className="file-card-size">{sizeText}</span>
+                        </div>
+                        <div className="file-card-actions">
+                          <button
+                            type="button"
+                            className="attachment-download-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadAttachment(att);
+                            }}
+                            title="Baixar / Abrir arquivo"
+                          >
+                            <DownloadIcon size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="attachment-delete-btn inline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAttachment(att.id);
+                            }}
+                            title="Excluir anexo"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getReviewItems, updateItem, getContexts } from "./commands";
 import { EditModal } from "./EditModal";
-import { PencilIcon, CalendarIcon } from "./Icons";
+import { PencilIcon, CalendarIcon, PaperclipIcon } from "./Icons";
 import type { ReviewData, Item, Context } from "./types";
 
 export const Review: React.FC = () => {
@@ -104,9 +104,10 @@ export const Review: React.FC = () => {
             {item.attachment_count !== undefined && item.attachment_count > 0 && (
               <span
                 className="badge badge-attachment"
-                title={`${item.attachment_count} print(s) anexado(s)`}
+                title={`${item.attachment_count} anexo(s)`}
               >
-                Print ({item.attachment_count})
+                <PaperclipIcon size={11} />
+                {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
               </span>
             )}
           </div>

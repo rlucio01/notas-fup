@@ -20,14 +20,13 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({ theme, onToggle }) => 
       <div className="theme-toggle-track">
         <div className="theme-toggle-thumb">
           <div className="theme-icon-wrapper sun-wrapper">
-            <SunIcon size={14} />
+            <SunIcon size={15} />
           </div>
           <div className="theme-icon-wrapper moon-wrapper">
-            <MoonIcon size={14} />
+            <MoonIcon size={15} />
           </div>
         </div>
       </div>
-      <span className="theme-toggle-label">{isDark ? "Escuro" : "Claro"}</span>
     </button>
   );
 };

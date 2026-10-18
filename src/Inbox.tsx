@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { getInboxItems, getContexts, updateItem, reorderItems } from "./commands";
 import { parseDateToken } from "./capture-syntax";
 import { EditModal } from "./EditModal";
-import { PencilIcon, FolderIcon, CalendarIcon, TrashIcon, GripIcon } from "./Icons";
+import { PencilIcon, FolderIcon, CalendarIcon, TrashIcon, GripIcon, PaperclipIcon } from "./Icons";
 import type { Item, Context } from "./types";
 
 export const Inbox: React.FC = () => {
@@ -290,9 +290,10 @@ export const Inbox: React.FC = () => {
                     {item.attachment_count !== undefined && item.attachment_count > 0 && (
                       <span
                         className="badge badge-attachment"
-                        title={`${item.attachment_count} print(s) anexado(s)`}
+                        title={`${item.attachment_count} anexo(s)`}
                       >
-                        Print ({item.attachment_count})
+                        <PaperclipIcon size={11} />
+                        {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
                       </span>
                     )}
                   </div>
