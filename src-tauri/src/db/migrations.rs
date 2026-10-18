@@ -2,7 +2,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 
 /// Current schema version. Bump this when adding new migrations.
-const CURRENT_VERSION: i64 = 2;
+const CURRENT_VERSION: i64 = 3;
 
 /// Run all pending migrations in order.
 pub fn run_all(conn: &Connection) -> Result<()> {
@@ -26,6 +26,9 @@ pub fn run_all(conn: &Connection) -> Result<()> {
     }
     if version < 2 {
         migrate_v2(conn)?;
+    }
+    if version < 3 {
+        migrate_v3(conn)?;
     }
 
     // Update version marker.
@@ -185,6 +188,24 @@ fn migrate_v2(conn: &Connection) -> Result<()> {
 
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_items_position ON items(position);",
+    )?;
+
+    Ok(())
+}
+
+fn migrate_v3(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS attachments (
+            id         TEXT PRIMARY KEY,
+            item_id    TEXT NOT NULL,
+            filename   TEXT,
+            mime_type  TEXT NOT NULL,
+            data       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_attachments_item ON attachments(item_id);",
     )?;
 
     Ok(())

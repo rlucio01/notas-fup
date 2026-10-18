@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { searchItems, getContexts, updateItem } from "./commands";
 import { EditModal } from "./EditModal";
 import { PencilIcon, LinkIcon } from "./Icons";
@@ -15,9 +15,22 @@ export const Search: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const doSearch = useCallback(async (q: string) => {
+    setSearching(true);
+    try {
+      const res = await searchItems(q.trim());
+      setResults(res);
+    } catch (err) {
+      console.error("Erro na busca FTS5:", err);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
   useEffect(() => {
     inputRef.current?.focus();
     getContexts().then(setContexts);
+    doSearch("");
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -29,29 +42,15 @@ export const Search: React.FC = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [doSearch]);
 
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      setResults([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const res = await searchItems(trimmed);
-        setResults(res);
-      } catch (err) {
-        console.error("Erro na busca FTS5:", err);
-      } finally {
-        setSearching(false);
-      }
-    }, 150);
+    const timer = setTimeout(() => {
+      doSearch(query);
+    }, 120);
 
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, doSearch]);
 
   // Apply in-memory client filters over the FTS results
   const filteredResults = results.filter((item) => {
@@ -153,26 +152,22 @@ export const Search: React.FC = () => {
             </select>
           </label>
 
-          {query && (
-            <span style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
-              {searching
-                ? "Buscando..."
-                : `${filteredResults.length} ${
-                    filteredResults.length === 1 ? "resultado" : "resultados"
-                  }`}
-            </span>
-          )}
+          <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: "12px" }}>
+            {searching
+              ? "Buscando..."
+              : `${filteredResults.length} ${
+                  filteredResults.length === 1 ? "demanda" : "demandas"
+                }`}
+          </span>
         </div>
       </div>
 
       {/* Results List */}
-      {!query.trim() ? (
+      {filteredResults.length === 0 ? (
         <div className="empty-state">
-          Digite qualquer termo, ticket (ex: CHG0012345), nome de pessoa ou palavra-chave para buscar.
-        </div>
-      ) : filteredResults.length === 0 ? (
-        <div className="empty-state">
-          Nenhum resultado encontrado para &quot;{query}&quot;.
+          {query.trim()
+            ? `Nenhum resultado encontrado para "${query}".`
+            : "Nenhuma demanda encontrada para os filtros selecionados."}
         </div>
       ) : (
         <div className="item-list">
@@ -275,10 +270,7 @@ export const Search: React.FC = () => {
           contexts={contexts}
           onClose={() => setEditingItem(null)}
           onSaved={async () => {
-            if (query.trim()) {
-              const res = await searchItems(query.trim());
-              setResults(res);
-            }
+            doSearch(query);
           }}
         />
       )}

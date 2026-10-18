@@ -7,7 +7,20 @@ use crate::db::queries::Item;
 pub fn search(conn: &Connection, query: &str) -> Result<Vec<Item>> {
     let query = query.trim();
     if query.is_empty() {
-        return Ok(vec![]);
+        let sql = format!(
+            "SELECT {cols}
+             FROM items i
+             LEFT JOIN contexts c ON i.context_id = c.id
+             WHERE i.deleted_at IS NULL
+             ORDER BY i.position ASC, i.created_at DESC
+             LIMIT 150",
+            cols = crate::db::queries::ITEM_SELECT_COLS
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let items = stmt
+            .query_map([], crate::db::queries::map_item_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        return Ok(items);
     }
 
     // Add prefix matching: append * to last term if it doesn't already end with one
@@ -117,7 +130,7 @@ mod tests {
     fn test_search_empty_query() {
         let conn = setup_with_items();
         let results = search(&conn, "").unwrap();
-        assert!(results.is_empty());
+        assert_eq!(results.len(), 4);
     }
 
     #[test]
