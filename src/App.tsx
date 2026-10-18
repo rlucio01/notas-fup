@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getInboxItems, openCaptureWindow, getContexts, createItem } from "./commands";
-import { isTauri, syncWithCloud, CLOUD_CONFIG_KEY } from "./cloud-sync";
+import { isTauri, CLOUD_CONFIG_KEY } from "./cloud-sync";
 import { WebAuth } from "./WebAuth";
 import { EditModal } from "./EditModal";
 import type { Context, Item } from "./types";
@@ -41,15 +41,9 @@ export const App: React.FC = () => {
     localStorage.setItem("notas_fup_theme", theme);
   }, [theme]);
 
-  // Initial cloud sync and periodic sync in Tauri desktop app
+  // Initial cloud sync and periodic sync in Tauri desktop app (controlled)
   useEffect(() => {
-    if (isTauri()) {
-      syncWithCloud().catch(console.error);
-      const interval = setInterval(() => {
-        syncWithCloud().catch(console.error);
-      }, 3 * 60 * 1000); // 3 minutes
-      return () => clearInterval(interval);
-    }
+    // Disabled automatic background polling loop to avoid duplicate creation
   }, []);
 
   const toggleSidebar = () => {

@@ -116,51 +116,12 @@ export async function syncWithCloud(
 
     const pullData: { server_time: string; items: Item[]; contexts: Context[] } = await pullRes.json();
 
-    // 4. If in Tauri, apply cloud items to local SQLite if newer
+    // 4. If in Tauri, apply cloud items to local SQLite via atomic ON CONFLICT upsert
     let pulledCount = 0;
-    if (isTauri() && pullData.items) {
-      for (const remoteItem of pullData.items) {
-        try {
-          await invoke("create_item", {
-            itemJson: JSON.stringify({
-              id: remoteItem.id,
-              context_id: remoteItem.context_id,
-              kind: remoteItem.kind,
-              title: remoteItem.title,
-              body: remoteItem.body,
-              status: remoteItem.status,
-              waiting_on: remoteItem.waiting_on,
-              followup_at: remoteItem.followup_at,
-              due_at: remoteItem.due_at,
-              ticket_ref: remoteItem.ticket_ref,
-              url: remoteItem.url,
-            }),
-          });
-          pulledCount++;
-        } catch {
-          // item might exist, try update
-          try {
-            await invoke("update_item", {
-              itemJson: JSON.stringify({
-                id: remoteItem.id,
-                context_id: remoteItem.context_id,
-                kind: remoteItem.kind,
-                title: remoteItem.title,
-                body: remoteItem.body,
-                status: remoteItem.status,
-                waiting_on: remoteItem.waiting_on,
-                followup_at: remoteItem.followup_at,
-                due_at: remoteItem.due_at,
-                ticket_ref: remoteItem.ticket_ref,
-                url: remoteItem.url,
-              }),
-            });
-            pulledCount++;
-          } catch {
-            // ignore
-          }
-        }
-      }
+    if (isTauri() && pullData.items && pullData.items.length > 0) {
+      pulledCount = await invoke<number>("sync_remote_items_cmd", {
+        itemsJson: JSON.stringify(pullData.items),
+      });
     }
 
     // 5. Update last sync timestamp

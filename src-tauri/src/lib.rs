@@ -211,6 +211,22 @@ fn get_review_items(
 }
 
 #[tauri::command]
+fn sync_remote_items_cmd(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    items_json: String,
+) -> Result<usize, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let items: Vec<db::queries::Item> =
+        serde_json::from_str(&items_json).map_err(|e| e.to_string())?;
+    let count = db::queries::upsert_remote_items(&conn, &items).map_err(|e| e.to_string())?;
+    if count > 0 {
+        let _ = app.emit("item-updated", ());
+    }
+    Ok(count)
+}
+
+#[tauri::command]
 fn save_capture(
     app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<rusqlite::Connection>>,
@@ -389,6 +405,7 @@ pub fn run() {
             get_followup_alerts,
             trigger_followup_alerts,
             send_test_notification_cmd,
+            sync_remote_items_cmd,
         ])
         .setup(|app| {
             // 1. Initialize SQLite database

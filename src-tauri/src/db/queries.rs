@@ -358,6 +358,59 @@ pub fn insert_item(conn: &Connection, new: &NewItem) -> Result<Item> {
     })
 }
 
+pub fn upsert_remote_items(conn: &Connection, items: &[Item]) -> Result<usize> {
+    let mut updated = 0;
+    for item in items {
+        let rows = conn.execute(
+            "INSERT INTO items (
+                id, context_id, kind, title, body, status, waiting_on,
+                followup_at, due_at, ticket_ref, url, done_at, source,
+                origin_app, position, created_at, updated_at, deleted_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+             ON CONFLICT(id) DO UPDATE SET
+                context_id = excluded.context_id,
+                kind = excluded.kind,
+                title = excluded.title,
+                body = excluded.body,
+                status = excluded.status,
+                waiting_on = excluded.waiting_on,
+                followup_at = excluded.followup_at,
+                due_at = excluded.due_at,
+                ticket_ref = excluded.ticket_ref,
+                url = excluded.url,
+                done_at = excluded.done_at,
+                position = excluded.position,
+                updated_at = excluded.updated_at,
+                deleted_at = excluded.deleted_at
+             WHERE excluded.updated_at >= items.updated_at",
+            params![
+                &item.id,
+                &item.context_id,
+                &item.kind,
+                &item.title,
+                &item.body,
+                &item.status,
+                &item.waiting_on,
+                &item.followup_at,
+                &item.due_at,
+                &item.ticket_ref,
+                &item.url,
+                &item.done_at,
+                &item.source,
+                &item.origin_app,
+                &item.position,
+                &item.created_at,
+                &item.updated_at,
+                &item.deleted_at,
+            ],
+        )?;
+        if rows > 0 {
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
 fn ensure_tag(conn: &Connection, name: &str) -> Result<()> {
     let exists: bool = conn.query_row(
         "SELECT COUNT(*) > 0 FROM tags WHERE name = ?1",
