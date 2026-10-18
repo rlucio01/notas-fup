@@ -54,7 +54,9 @@ Você não precisa compilar nada para usar o Notas FUP:
 3. Execute o instalador (instalação rápida no perfil do usuário, sem exigir privilégios de administrador).
 4. O ícone 3D do Notas FUP aparecerá na barra de notificações (System Tray) e o atalho `Ctrl + Alt + N` estará ativo.
 
-> 📱 **Acesso Web / Mobile**: Utilize o portal oficial em [https://notas-fup.pages.dev](https://notas-fup.pages.dev) para consultar e adicionar anotações pelo smartphone.
+> 💾 **100% Offline e Local por Padrão**: Todas as suas notas, contextos e buscas ficam armazenadas exclusivamente no seu computador em SQLite. Nenhuma conta na nuvem é necessária para utilizar o aplicativo desktop.
+>
+> ☁️ **Sincronização em Nuvem Pessoal (Opcional & Gratuita)**: Caso deseje acessar suas notas pelo celular ou outro computador, você pode configurar a sua própria nuvem privada e gratuita no Cloudflare (D1 + Pages). Cada usuário cria seu próprio banco e página web exclusiva (veja a seção [Configuração de Nuvem Pessoal](#-configuração-de-nuvem-pessoal-cloudflare-opcional) abaixo).
 
 ---
 
@@ -104,6 +106,78 @@ Alinhar deploy da API com o time @Contech #producao aguardando: Marcos cobrar: 2
 - `cobrar: YYYY-MM-DD` ou `amanhã`: Define o lembrete de follow-up.
 - `TICKET` / `PTASK...`: Detecta referências de chamados automaticamente.
 - `http...`: Converte em link clicável no item.
+
+---
+
+## ☁️ Configuração de Nuvem Pessoal (Cloudflare Opcional)
+
+O **Notas FUP** foi desenvolvido seguindo a filosofia **Local-First & Self-Hosted**. Ele **não é um serviço SaaS centralizado** onde todos os usuários compartilham o mesmo servidor ou banco de dados.
+
+Por padrão, você não precisa de conta na nuvem para usar o aplicativo no Windows. Caso queira ter sincronização bidirecional em tempo real e acessar suas notas pelo smartphone, **você deve criar a sua própria nuvem gratuita no Cloudflare** (Workers + D1 + Pages).
+
+O plano gratuito da Cloudflare (Free Tier) é mais do que suficiente para uso pessoal e não possui custos.
+
+### Passo 1: Criar Conta na Cloudflare
+Se ainda não possuir, crie uma conta gratuita em [cloudflare.com](https://cloudflare.com).
+
+### Passo 2: Fazer Fork ou Clonar o Repositório
+Faça um Fork deste repositório na sua conta do GitHub ou clone localmente:
+```powershell
+git clone https://github.com/<seu-usuario>/notas-fup.git
+cd notas-fup
+```
+
+### Passo 3: Criar o seu Banco de Dados D1 Exclusivo
+No diretório `worker/`, execute o Wrangler para criar seu banco de dados serverless:
+```powershell
+cd worker
+npx wrangler d1 create notas-fup-db
+```
+O comando exibirá o seu `database_id` exclusivo. Abra o arquivo `worker/wrangler.toml` e atualize com o seu ID:
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "notas-fup-db"
+database_id = "seu-database-id-gerado-aqui"
+```
+
+### Passo 4: Inicializar as Tabelas no seu Banco D1
+Execute o arquivo de schema para criar as tabelas no seu banco remoto na Cloudflare:
+```powershell
+npx wrangler d1 execute notas-fup-db --remote --file=../d1_schema.sql
+```
+
+### Passo 5: Definir a sua Senha Secreta de Acesso
+Defina a sua senha pessoal (ela será exigida ao acessar pelo celular ou conectar o desktop):
+```powershell
+npx wrangler secret put AUTH_SECRET
+# Digite a sua senha desejada (ex: MinhaSenhaFUP!123)
+```
+
+### Passo 6: Publicar a sua API Worker
+```powershell
+npx wrangler deploy
+```
+O Wrangler exibirá a URL da sua API exclusiva, por exemplo:
+`https://notas-fup-api.<seu-subdominio>.workers.dev`
+
+### Passo 7: Criar a sua Página Web / Mobile no Cloudflare Pages
+1. Acesse o painel da Cloudflare &rarr; **Workers & Pages** &rarr; **Create application** &rarr; aba **Pages** &rarr; **Connect to Git**.
+2. Selecione o seu fork do repositório `notas-fup`.
+3. Preencha as configurações de compilação:
+   - **Framework preset**: `Vite`
+   - **Build command**: `npm run build`
+   - **Build output directory**: `dist`
+   - **Environment variables** (Variáveis de Ambiente):
+     - Nome: `VITE_CLOUD_URL`
+     - Valor: `https://notas-fup-api.<seu-subdominio>.workers.dev` (a URL gerada no Passo 6)
+4. Clique em **Save and Deploy**. A Cloudflare criará a sua página web pessoal (ex: `https://meu-notas-fup.pages.dev`).
+
+### Passo 8: Conectar o Aplicativo à sua Nuvem
+1. No aplicativo Notas FUP instalado no seu PC, abra a aba **Configurações (7)** &rarr; **Sincronização em Nuvem (Cloudflare D1)**.
+2. Informe a URL da sua API Worker e a sua senha secreta criada no Passo 5.
+3. No seu smartphone, abra a URL da sua página Pages (criada no Passo 7) e informe a sua senha.
+4. Pronto! Suas anotações passam a sincronizar em tempo real e de forma 100% privada entre o seu computador e o celular.
 
 ---
 
