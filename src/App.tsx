@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getInboxItems, openCaptureWindow } from "./commands";
+import { getInboxItems, openCaptureWindow, getContexts, createItem } from "./commands";
+import { isTauri, syncWithCloud, CLOUD_CONFIG_KEY } from "./cloud-sync";
+import { WebAuth } from "./WebAuth";
+import { EditModal } from "./EditModal";
+import type { Context, Item } from "./types";
 import Today from "./Today";
 import Inbox from "./Inbox";
 import Search from "./Search";
@@ -16,8 +20,13 @@ type TabId = "today" | "inbox" | "search" | "import" | "review" | "done" | "sett
 type Theme = "dark" | "light";
 
 export const App: React.FC = () => {
+  const [authenticated, setAuthenticated] = useState<boolean>(() => {
+    return isTauri() || Boolean(localStorage.getItem(CLOUD_CONFIG_KEY));
+  });
   const [activeTab, setActiveTab] = useState<TabId>("today");
   const [inboxCount, setInboxCount] = useState<number>(0);
+  const [editingNewItem, setEditingNewItem] = useState<Item | null>(null);
+  const [contexts, setContexts] = useState<Context[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("notas_fup_sidebar_collapsed") === "true";
   });
@@ -31,6 +40,17 @@ export const App: React.FC = () => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("notas_fup_theme", theme);
   }, [theme]);
+
+  // Initial cloud sync and periodic sync in Tauri desktop app
+  useEffect(() => {
+    if (isTauri()) {
+      syncWithCloud().catch(console.error);
+      const interval = setInterval(() => {
+        syncWithCloud().catch(console.error);
+      }, 3 * 60 * 1000); // 3 minutes
+      return () => clearInterval(interval);
+    }
+  }, []);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => {
@@ -54,21 +74,24 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!authenticated && !isTauri()) return;
     refreshInboxCount();
 
     let unlistenCreated: (() => void) | undefined;
     let unlistenUpdated: (() => void) | undefined;
     let unlistenImported: (() => void) | undefined;
 
-    listen("item-created", () => refreshInboxCount()).then((un) => {
-      unlistenCreated = un;
-    });
-    listen("item-updated", () => refreshInboxCount()).then((un) => {
-      unlistenUpdated = un;
-    });
-    listen("items-imported", () => refreshInboxCount()).then((un) => {
-      unlistenImported = un;
-    });
+    if (isTauri()) {
+      listen("item-created", () => refreshInboxCount()).then((un) => {
+        unlistenCreated = un;
+      });
+      listen("item-updated", () => refreshInboxCount()).then((un) => {
+        unlistenUpdated = un;
+      });
+      listen("items-imported", () => refreshInboxCount()).then((un) => {
+        unlistenImported = un;
+      });
+    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Allow Ctrl+B to toggle sidebar anywhere
@@ -173,6 +196,27 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleOpenCaptureOrNew = async () => {
+    if (isTauri()) {
+      openCaptureWindow();
+    } else {
+      try {
+        const [newItem, allContexts] = await Promise.all([
+          createItem({ title: "Nova Anotação", body: "", status: "inbox" }),
+          getContexts(),
+        ]);
+        setContexts(allContexts);
+        setEditingNewItem(newItem);
+      } catch (err) {
+        console.error("Erro ao criar nova anotação:", err);
+      }
+    }
+  };
+
+  if (!authenticated && !isTauri()) {
+    return <WebAuth onAuthenticated={() => setAuthenticated(true)} />;
+  }
+
   return (
     <div className="app-container">
       {/* Sidebar */}
@@ -217,7 +261,7 @@ export const App: React.FC = () => {
           <button
             className="btn btn-primary btn-sm"
             style={{ width: "100%", justifyContent: "center" }}
-            onClick={() => openCaptureWindow()}
+            onClick={handleOpenCaptureOrNew}
             title="Abrir captura rápida (Ctrl+Alt+N)"
           >
             <span className="sidebar-footer-text">Captura (Ctrl+Alt+N)</span>
@@ -239,8 +283,8 @@ export const App: React.FC = () => {
 
             <button
               className="btn btn-secondary btn-sm btn-icon"
-              onClick={() => openCaptureWindow()}
-              title="Abrir janela de captura rápida (Ctrl+Alt+N)"
+              onClick={handleOpenCaptureOrNew}
+              title="Criar nova nota (Ctrl+Alt+N)"
             >
               <PlusIcon size={13} />
               <span>Nova Nota</span>
@@ -256,6 +300,18 @@ export const App: React.FC = () => {
         {activeTab === "done" && <Done />}
         {activeTab === "settings" && <Settings theme={theme} onThemeChange={setTheme} />}
       </main>
+
+      {editingNewItem && (
+        <EditModal
+          item={editingNewItem}
+          contexts={contexts}
+          onClose={() => setEditingNewItem(null)}
+          onSaved={async () => {
+            setEditingNewItem(null);
+            refreshInboxCount();
+          }}
+        />
+      )}
     </div>
   );
 };

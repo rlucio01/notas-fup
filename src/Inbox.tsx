@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getInboxItems, getContexts, updateItem, reorderItems } from "./commands";
+import { isTauri } from "./cloud-sync";
 import { parseDateToken } from "./capture-syntax";
 import { EditModal } from "./EditModal";
 import { FolderIcon, CalendarIcon, TrashIcon, GripIcon, PaperclipIcon } from "./Icons";
@@ -41,15 +42,17 @@ export const Inbox: React.FC = () => {
     let unlistenUpdated: (() => void) | undefined;
     let unlistenContext: (() => void) | undefined;
 
-    listen("item-created", () => loadData()).then((un) => {
-      unlistenCreated = un;
-    });
-    listen("item-updated", () => loadData()).then((un) => {
-      unlistenUpdated = un;
-    });
-    listen("context-updated", () => loadData()).then((un) => {
-      unlistenContext = un;
-    });
+    if (isTauri()) {
+      listen("item-created", () => loadData()).then((un) => {
+        unlistenCreated = un;
+      });
+      listen("item-updated", () => loadData()).then((un) => {
+        unlistenUpdated = un;
+      });
+      listen("context-updated", () => loadData()).then((un) => {
+        unlistenContext = un;
+      });
+    }
 
     return () => {
       unlistenCreated?.();

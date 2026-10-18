@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getTodayItems, getInboxItems, updateItem, getContexts, reorderItems, getFollowupAlerts } from "./commands";
+import { isTauri } from "./cloud-sync";
 import { computeTodayBlocks } from "./today-blocks";
 import { EditModal } from "./EditModal";
 import { CalendarIcon, LinkIcon, GripIcon, PaperclipIcon, ChevronUpIcon, ChevronDownIcon } from "./Icons";
@@ -54,18 +55,20 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     let unlistenImported: (() => void) | undefined;
     let unlistenContext: (() => void) | undefined;
 
-    listen("item-created", () => loadData()).then((un) => {
-      unlistenCreated = un;
-    });
-    listen("item-updated", () => loadData()).then((un) => {
-      unlistenUpdated = un;
-    });
-    listen("items-imported", () => loadData()).then((un) => {
-      unlistenImported = un;
-    });
-    listen("context-updated", () => loadData()).then((un) => {
-      unlistenContext = un;
-    });
+    if (isTauri()) {
+      listen("item-created", () => loadData()).then((un) => {
+        unlistenCreated = un;
+      });
+      listen("item-updated", () => loadData()).then((un) => {
+        unlistenUpdated = un;
+      });
+      listen("items-imported", () => loadData()).then((un) => {
+        unlistenImported = un;
+      });
+      listen("context-updated", () => loadData()).then((un) => {
+        unlistenContext = un;
+      });
+    }
 
     return () => {
       unlistenCreated?.();

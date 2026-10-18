@@ -1580,4 +1580,79 @@ body, html, #root {
   cursor: default;
 }
 
+/* Mobile Responsive Adjustments (Smartphone & Tablet) */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    width: 100% !important;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding: 10px 14px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .sidebar-header {
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+  }
+
+  .sidebar-toggle-btn {
+    display: none;
+  }
+
+  .nav-list {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    gap: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-item {
+    padding: 6px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+    border-radius: 20px;
+  }
+
+  .sidebar-footer {
+    display: none;
+  }
+
+  .main-content {
+    padding: 12px;
+    overflow-y: visible;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .page-title {
+    font-size: 18px;
+  }
+
+  .item-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .item-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+
 

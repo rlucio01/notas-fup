@@ -8,7 +8,8 @@ import {
   triggerFollowupAlerts,
 } from "./commands";
 import ThemeToggle from "./ThemeToggle";
-import { PencilIcon, TrashIcon, CheckIcon, XIcon } from "./Icons";
+import { PencilIcon, TrashIcon, CheckIcon, XIcon, LinkIcon } from "./Icons";
+import { isTauri, syncWithCloud, getCloudConfig, CLOUD_CONFIG_KEY } from "./cloud-sync";
 import type { Context, AppConfig } from "./types";
 
 interface SettingsProps {
@@ -55,6 +56,32 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState("#6366f1");
   const [saveStatus, setSaveStatus] = useState<string>("Salvo automaticamente");
+  const [cloudConfig, setCloudConfig] = useState(getCloudConfig);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const handleManualSync = async () => {
+    setSyncing(true);
+    setSyncMsg("Sincronizando com Cloudflare D1...");
+    try {
+      const result = await syncWithCloud(cloudConfig);
+      if (result.success) {
+        setSyncMsg(`Sincronizado com sucesso! (${result.pushed} enviados, ${result.pulled} recebidos)`);
+        setCloudConfig(getCloudConfig());
+      } else {
+        setSyncMsg(`Erro: ${result.error || "Falha na sincronização"}`);
+      }
+    } catch (err: any) {
+      setSyncMsg(`Erro: ${err.message || "Falha na sincronização"}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleLogoutWeb = () => {
+    localStorage.removeItem(CLOUD_CONFIG_KEY);
+    window.location.reload();
+  };
 
   useEffect(() => {
     getContexts().then(setContexts);
@@ -477,6 +504,93 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
             ))}
           </div>
         </form>
+      </div>
+
+      {/* Sincronização em Nuvem (Cloudflare D1 & Celular) */}
+      <div className="card">
+        <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <span className="card-title">Sincronização em Nuvem (Cloudflare D1)</span>
+            <span className="card-desc">Sincronize com o Cloudflare para acessar no celular e em qualquer navegador</span>
+          </div>
+          <span className="badge badge-success" style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--success)" }} />
+            Conectado
+          </span>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "12px" }}>
+          <div className="setting-row">
+            <div>
+              <div className="setting-label">API Cloudflare Worker</div>
+              <div className="setting-desc" style={{ fontFamily: "monospace", fontSize: "11px" }}>
+                {cloudConfig.url}
+              </div>
+            </div>
+          </div>
+
+          <div className="setting-row">
+            <div>
+              <div className="setting-label">Acesso Web & Celular (Cloudflare Pages)</div>
+              <div className="setting-desc">
+                Abra no seu celular ou qualquer computador para visualizar e editar tarefas
+              </div>
+            </div>
+            <a
+              href="https://notas-fup.pages.dev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-secondary btn-sm"
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px", textDecoration: "none" }}
+            >
+              <LinkIcon size={12} />
+              <span>Abrir Web</span>
+            </a>
+          </div>
+
+          <div className="setting-row">
+            <div>
+              <div className="setting-label">Última Sincronização</div>
+              <div className="setting-desc">
+                {cloudConfig.lastSyncAt ? new Date(cloudConfig.lastSyncAt).toLocaleString("pt-BR") : "Ainda não sincronizado"}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleManualSync}
+                disabled={syncing}
+              >
+                {syncing ? "Sincronizando..." : "Sincronizar Agora"}
+              </button>
+
+              {!isTauri() && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleLogoutWeb}
+                  title="Desconectar e limpar chave de acesso neste dispositivo"
+                >
+                  Sair
+                </button>
+              )}
+            </div>
+          </div>
+
+          {syncMsg && (
+            <div
+              style={{
+                fontSize: "12px",
+                padding: "8px 12px",
+                borderRadius: "6px",
+                backgroundColor: syncMsg.startsWith("Erro") ? "rgba(239, 68, 68, 0.15)" : "rgba(34, 197, 94, 0.15)",
+                color: syncMsg.startsWith("Erro") ? "var(--danger)" : "var(--success)",
+              }}
+            >
+              {syncMsg}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Sobre e Memória */}
