@@ -7,7 +7,7 @@ export const isTauri = (): boolean => {
 
 export const CLOUD_CONFIG_KEY = "notas_fup_cloud_config";
 export const DEFAULT_CLOUD_URL = "https://notas-fup-api.rlucio01.workers.dev";
-export const DEFAULT_CLOUD_SECRET = isTauri() ? "rafa01!@@" : "";
+export const DEFAULT_CLOUD_SECRET = (import.meta.env.VITE_CLOUD_SECRET as string) || "";
 
 export interface CloudConfig {
   enabled: boolean;

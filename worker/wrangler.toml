@@ -1,10 +1,9 @@
 name = "notas-fup-api"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
-account_id = "9c720dafebcc3573b0895973521831bf"
 
-[vars]
-AUTH_SECRET = "rafa01!@@"
+# Nota: Defina o segredo via 'npx wrangler secret put AUTH_SECRET'
+# ou para testes locais crie um arquivo .dev.vars (ignorado pelo git)
 
 [[d1_databases]]
 binding = "DB"

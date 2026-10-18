@@ -8,7 +8,7 @@ import urllib.error
 DB_PATH = os.path.expandvars(r"%APPDATA%\com.rlucio.notasfup\notas-fup.db")
 BACKUP_PATH = os.path.expandvars(r"%APPDATA%\com.rlucio.notasfup\notas-fup.db.bak")
 API_URL = "https://notas-fup-api.rlucio01.workers.dev/api/sync"
-SECRET = "rafa01!@@"
+SECRET = os.environ.get("FUP_SECRET", "")
 
 def main():
     if not os.path.exists(DB_PATH):
