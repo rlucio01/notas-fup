@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getReviewItems, updateItem, getContexts } from "./commands";
 import { EditModal } from "./EditModal";
-import { PencilIcon, CalendarIcon, PaperclipIcon } from "./Icons";
+import { CalendarIcon, PaperclipIcon } from "./Icons";
 import type { ReviewData, Item, Context } from "./types";
 
 export const Review: React.FC = () => {
@@ -114,14 +114,6 @@ export const Review: React.FC = () => {
           {item.body && <div className="item-body">{item.body}</div>}
         </div>
         <div className="item-actions">
-          <button
-            className="btn btn-secondary btn-sm btn-icon"
-            onClick={() => setEditingItem(item)}
-            title="Editar ou Reclassificar (Contexto, Tags, Datas)"
-          >
-            <PencilIcon size={12} />
-            <span>Editar</span>
-          </button>
           <button
             className="btn btn-secondary btn-sm btn-icon"
             onClick={() => handlePostponeTomorrow(item)}

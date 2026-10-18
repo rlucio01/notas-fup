@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { getInboxItems, getContexts, updateItem, reorderItems } from "./commands";
 import { parseDateToken } from "./capture-syntax";
 import { EditModal } from "./EditModal";
-import { PencilIcon, FolderIcon, CalendarIcon, TrashIcon, GripIcon, PaperclipIcon } from "./Icons";
+import { FolderIcon, CalendarIcon, TrashIcon, GripIcon, PaperclipIcon } from "./Icons";
 import type { Item, Context } from "./types";
 
 export const Inbox: React.FC = () => {
@@ -261,8 +261,8 @@ export const Inbox: React.FC = () => {
                 <div
                   className="item-main"
                   style={{ cursor: "pointer" }}
-                  onDoubleClick={() => setEditingItem(item)}
-                  title="Clique duas vezes ou pressione E para editar"
+                  onClick={() => setEditingItem(item)}
+                  title="Clique para editar ou reclassificar (E)"
                 >
                   <div className="item-title-line">
                     <span className="item-title">{item.title}</span>
@@ -302,17 +302,6 @@ export const Inbox: React.FC = () => {
                 </div>
 
                 <div className="item-actions">
-                  <button
-                    className="btn btn-secondary btn-sm btn-icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingItem(item);
-                    }}
-                    title="Editar e Reclassificar Nota (E)"
-                  >
-                    <PencilIcon size={12} />
-                    <span>Editar</span>
-                  </button>
                   <button
                     className="btn btn-secondary btn-sm btn-icon"
                     onClick={(e) => {

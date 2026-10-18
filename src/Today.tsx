@@ -1,23 +1,20 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getTodayItems, getInboxItems, updateItem, getContexts, reorderItems } from "./commands";
 import { computeTodayBlocks } from "./today-blocks";
 import { EditModal } from "./EditModal";
-import { PencilIcon, CalendarIcon, LinkIcon, GripIcon, PaperclipIcon } from "./Icons";
-import type { Item, TodayBlocks, Context } from "./types";
+import { CalendarIcon, LinkIcon, GripIcon, PaperclipIcon } from "./Icons";
+import type { Item, Context } from "./types";
 
 interface TodayProps {
   onNavigateToInbox: () => void;
 }
 
 export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
-  const [blocks, setBlocks] = useState<TodayBlocks>({
-    overdue: [],
-    today: [],
-    waiting: {},
-    inbox_count: 0,
-  });
+  const [allItems, setAllItems] = useState<Item[]>([]);
+  const [inboxCount, setInboxCount] = useState<number>(0);
   const [contexts, setContexts] = useState<Context[]>([]);
+  const [selectedContext, setSelectedContext] = useState<string>("all");
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -34,10 +31,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         getContexts(),
       ]);
       setContexts(ctxs);
-      const todayStr = new Date().toISOString().substring(0, 10);
-      const computed = computeTodayBlocks(items, todayStr);
-      computed.inbox_count = inbox.length;
-      setBlocks(computed);
+      setAllItems(items);
+      setInboxCount(inbox.length);
     } catch (e) {
       console.error("Erro ao carregar itens de hoje:", e);
     } finally {
@@ -70,6 +65,60 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     };
   }, [loadData]);
 
+  // Aggregate active contexts and task counts
+  const { contextFilterList, totalActiveCount, noContextCount } = useMemo(() => {
+    const active = allItems.filter((i) => i.status !== "done" && i.status !== "dropped");
+    const counts: Record<string, { key: string; name: string; color?: string | null; count: number }> = {};
+    let noCtx = 0;
+
+    for (const item of active) {
+      if (item.context_name) {
+        const key = item.context_name.toLowerCase();
+        if (!counts[key]) {
+          counts[key] = {
+            key,
+            name: item.context_name,
+            color: item.context_color,
+            count: 0,
+          };
+        }
+        counts[key].count += 1;
+      } else {
+        noCtx += 1;
+      }
+    }
+
+    const list = Object.values(counts).sort((a, b) => b.count - a.count);
+
+    return {
+      contextFilterList: list,
+      totalActiveCount: active.length,
+      noContextCount: noCtx,
+    };
+  }, [allItems]);
+
+  // Filter items by context selection
+  const filteredItems = useMemo(() => {
+    if (selectedContext === "all") return allItems;
+    if (selectedContext === "none") {
+      return allItems.filter((i) => !i.context_id && !i.context_name);
+    }
+    const selLower = selectedContext.toLowerCase();
+    return allItems.filter((i) => {
+      if (i.context_id && i.context_id.toLowerCase() === selLower) return true;
+      if (i.context_name && i.context_name.toLowerCase() === selLower) return true;
+      return false;
+    });
+  }, [allItems, selectedContext]);
+
+  // Compute blocks based on filtered items
+  const blocks = useMemo(() => {
+    const todayStr = new Date().toISOString().substring(0, 10);
+    const computed = computeTodayBlocks(filteredItems, todayStr);
+    computed.inbox_count = inboxCount;
+    return computed;
+  }, [filteredItems, inboxCount]);
+
   const handleToggleDone = async (item: Item) => {
     const newStatus = item.status === "done" ? "open" : "done";
     await updateItem({ id: item.id, status: newStatus });
@@ -92,33 +141,17 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const handleDrop = async (targetId: string, section: "today" | "overdue") => {
     if (!draggedId || draggedId === targetId || dragSection !== section) return;
 
-    if (section === "today") {
-      const list = [...blocks.today];
-      const fromIdx = list.findIndex((i) => i.id === draggedId);
-      const toIdx = list.findIndex((i) => i.id === targetId);
-      if (fromIdx >= 0 && toIdx >= 0) {
-        const [moved] = list.splice(fromIdx, 1);
-        list.splice(toIdx, 0, moved);
-        setBlocks((prev) => ({ ...prev, today: list }));
-        try {
-          await reorderItems(list.map((i) => i.id));
-        } catch (err) {
-          console.error("Erro ao reordenar tarefas:", err);
-        }
-      }
-    } else if (section === "overdue") {
-      const list = [...blocks.overdue];
-      const fromIdx = list.findIndex((i) => i.id === draggedId);
-      const toIdx = list.findIndex((i) => i.id === targetId);
-      if (fromIdx >= 0 && toIdx >= 0) {
-        const [moved] = list.splice(fromIdx, 1);
-        list.splice(toIdx, 0, moved);
-        setBlocks((prev) => ({ ...prev, overdue: list }));
-        try {
-          await reorderItems(list.map((i) => i.id));
-        } catch (err) {
-          console.error("Erro ao reordenar atrasadas:", err);
-        }
+    const list = [...(section === "today" ? blocks.today : blocks.overdue)];
+    const fromIdx = list.findIndex((i) => i.id === draggedId);
+    const toIdx = list.findIndex((i) => i.id === targetId);
+    if (fromIdx >= 0 && toIdx >= 0) {
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      try {
+        await reorderItems(list.map((i) => i.id));
+        loadData();
+      } catch (err) {
+        console.error("Erro ao reordenar tarefas:", err);
       }
     }
 
@@ -141,22 +174,19 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     return (
       <div
         key={item.id}
-        className={`item-row ${isBeingDragged ? "is-dragging" : ""} ${isDragOver ? "drag-over-top" : ""}`}
+        className={`item-row ${isBeingDragged ? "is-dragging" : ""} ${
+          isDragOver ? "drag-over-top" : ""
+        }`}
         draggable={isDraggable}
-        onDragStart={(e) => {
-          if (!isDraggable) return;
-          e.dataTransfer.setData("text/plain", item.id);
-          e.dataTransfer.effectAllowed = "move";
-          setDraggedId(item.id);
-          setDragSection(section);
+        onDragStart={() => {
+          if (isDraggable) {
+            setDraggedId(item.id);
+            setDragSection(section || null);
+          }
         }}
         onDragOver={(e) => {
-          if (!isDraggable || dragSection !== section) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-        }}
-        onDragEnter={() => {
-          if (isDraggable && draggedId && draggedId !== item.id && dragSection === section) {
+          if (isDraggable && draggedId && draggedId !== item.id) {
+            e.preventDefault();
             setDragOverId(item.id);
           }
         }}
@@ -165,10 +195,10 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
             setDragOverId(null);
           }
         }}
-        onDrop={(e) => {
-          if (!isDraggable || !section) return;
-          e.preventDefault();
-          handleDrop(item.id, section);
+        onDrop={() => {
+          if (isDraggable && section) {
+            handleDrop(item.id, section);
+          }
         }}
         onDragEnd={() => {
           setDraggedId(null);
@@ -179,7 +209,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         {isDraggable && (
           <span
             className="drag-handle"
-            title="Arraste para definir a prioridade (solte acima ou abaixo)"
+            title="Arraste para priorizar acima ou abaixo"
+            onClick={(e) => e.stopPropagation()}
           >
             <GripIcon size={14} />
           </span>
@@ -213,7 +244,17 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
                 className="badge badge-context"
                 style={{
                   borderColor: item.context_color || undefined,
+                  cursor: "pointer",
                 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedContext((prev) =>
+                    prev === item.context_name?.toLowerCase()
+                      ? "all"
+                      : (item.context_name?.toLowerCase() || "all")
+                  );
+                }}
+                title={`Clique para filtrar pelo contexto @${item.context_name}`}
               >
                 @{item.context_name}
               </span>
@@ -268,16 +309,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           )}
           <button
             className="btn btn-secondary btn-sm btn-icon"
-            onClick={() => setEditingItem(item)}
-            title="Editar ou Reclassificar (Contexto, Tags, Datas)"
-          >
-            <PencilIcon size={12} />
-            <span>Editar</span>
-          </button>
-          <button
-            className="btn btn-secondary btn-sm btn-icon"
             onClick={() => handlePostponeTomorrow(item)}
-            title="Adiar para amanhã"
+            title="Adiar para amanhã (+1 dia)"
           >
             <CalendarIcon size={12} />
             <span>+1 dia</span>
@@ -296,13 +329,73 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   }
 
   const hasAnyItems =
-    blocks.overdue.length > 0 ||
-    blocks.today.length > 0 ||
-    Object.keys(blocks.waiting).length > 0 ||
+    allItems.length > 0 ||
     blocks.inbox_count > 0;
 
   return (
     <div className="page-body">
+      {/* Barra de Filtro por Contexto */}
+      {contextFilterList.length > 0 && (
+        <div className="context-filter-bar">
+          <span className="context-filter-label">Contexto:</span>
+          <div className="context-filter-pills">
+            <button
+              type="button"
+              className={`context-filter-pill ${selectedContext === "all" ? "active" : ""}`}
+              onClick={() => setSelectedContext("all")}
+            >
+              <span>Todos</span>
+              <span className="filter-count-badge">{totalActiveCount}</span>
+            </button>
+
+            {contextFilterList.map((ctx) => (
+              <button
+                key={ctx.key}
+                type="button"
+                className={`context-filter-pill ${selectedContext === ctx.key ? "active" : ""}`}
+                onClick={() => setSelectedContext(selectedContext === ctx.key ? "all" : ctx.key)}
+                style={
+                  selectedContext === ctx.key && ctx.color
+                    ? { backgroundColor: ctx.color + "22", borderColor: ctx.color, color: ctx.color }
+                    : undefined
+                }
+                title={`Filtrar apenas demandas de @${ctx.name}`}
+              >
+                <span
+                  className="context-pill-indicator"
+                  style={{ backgroundColor: ctx.color || "var(--accent)" }}
+                />
+                <span>@{ctx.name}</span>
+                <span className="filter-count-badge">{ctx.count}</span>
+              </button>
+            ))}
+
+            {noContextCount > 0 && (
+              <button
+                type="button"
+                className={`context-filter-pill ${selectedContext === "none" ? "active" : ""}`}
+                onClick={() => setSelectedContext(selectedContext === "none" ? "all" : "none")}
+                title="Filtrar demandas sem contexto definido"
+              >
+                <span>Sem contexto</span>
+                <span className="filter-count-badge">{noContextCount}</span>
+              </button>
+            )}
+
+            {selectedContext !== "all" && (
+              <button
+                type="button"
+                className="context-filter-clear"
+                onClick={() => setSelectedContext("all")}
+                title="Limpar filtro de contexto"
+              >
+                Limpar filtro
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Bloco 1: Atrasados */}
       {blocks.overdue.length > 0 && (
         <div className="card">
@@ -330,7 +423,9 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         </div>
         {blocks.today.length === 0 ? (
           <div className="empty-state">
-            Nenhuma demanda agendada para hoje.
+            {selectedContext === "all"
+              ? "Nenhuma demanda agendada para hoje."
+              : "Nenhuma demanda agendada para hoje neste contexto."}
           </div>
         ) : (
           <div className="item-list">
@@ -355,7 +450,9 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
 
         {Object.keys(blocks.waiting).length === 0 ? (
           <div className="empty-state">
-            Nenhum item aguardando resposta de terceiros.
+            {selectedContext === "all"
+              ? "Nenhum item aguardando resposta de terceiros."
+              : "Nenhum item aguardando resposta de terceiros neste contexto."}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
