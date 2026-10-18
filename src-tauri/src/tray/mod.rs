@@ -11,11 +11,12 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let quit_i = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&capture_i, &open_i, &quit_i])?;
 
-    let icon = match app.default_window_icon() {
-        Some(i) => i.clone(),
-        None => {
-            return Err("default window icon not found".into());
-        }
+    let icon = match tauri::image::Image::from_bytes(include_bytes!("../../icons/32x32.png")) {
+        Ok(img) => img,
+        Err(_) => match app.default_window_icon() {
+            Some(i) => i.clone(),
+            None => return Err("default window icon not found".into()),
+        },
     };
 
     let _tray = TrayIconBuilder::with_id("main-tray")
