@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getInboxItems, openCaptureWindow, getContexts, createItem } from "./commands";
-import { isTauri, getCloudConfig } from "./cloud-sync";
+import { isTauri, getCloudConfig, syncWithCloud } from "./cloud-sync";
 import { WebAuth } from "./WebAuth";
 import { EditModal } from "./EditModal";
 import type { Context, Item } from "./types";
@@ -43,9 +43,37 @@ export const App: React.FC = () => {
     localStorage.setItem("notas_fup_theme", theme);
   }, [theme]);
 
-  // Initial cloud sync and periodic sync in Tauri desktop app (controlled)
+  // ── Two-way Cloudflare Sync (Desktop <-> Cloudflare D1) ─────────────────
   useEffect(() => {
-    // Disabled automatic background polling loop to avoid duplicate creation
+    if (!isTauri()) return;
+
+    let syncTimer: any = null;
+    const triggerDebouncedSync = () => {
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        syncWithCloud().catch(console.error);
+      }, 1000);
+    };
+
+    // 1. Initial sync on launch
+    triggerDebouncedSync();
+
+    // 2. Sync whenever desktop window gains focus (e.g. user returns to PC)
+    const handleFocus = () => {
+      triggerDebouncedSync();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    // 3. Periodic sync every 30 seconds
+    const interval = setInterval(() => {
+      syncWithCloud().catch(console.error);
+    }, 30 * 1000);
+
+    return () => {
+      if (syncTimer) clearTimeout(syncTimer);
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, []);
 
   const toggleSidebar = () => {
@@ -78,13 +106,27 @@ export const App: React.FC = () => {
     let unlistenImported: (() => void) | undefined;
 
     if (isTauri()) {
-      listen("item-created", () => refreshInboxCount()).then((un) => {
+      listen("item-created", () => {
+        refreshInboxCount();
+        syncWithCloud().catch(console.error);
+      }).then((un) => {
         unlistenCreated = un;
       });
-      listen("item-updated", () => refreshInboxCount()).then((un) => {
+
+      listen("item-updated", (event) => {
+        refreshInboxCount();
+        // If the update originated locally on desktop (not from remote-sync), push to cloud
+        if (event.payload !== "remote-sync") {
+          syncWithCloud().catch(console.error);
+        }
+      }).then((un) => {
         unlistenUpdated = un;
       });
-      listen("items-imported", () => refreshInboxCount()).then((un) => {
+
+      listen("items-imported", () => {
+        refreshInboxCount();
+        syncWithCloud().catch(console.error);
+      }).then((un) => {
         unlistenImported = un;
       });
     }

@@ -221,7 +221,7 @@ fn sync_remote_items_cmd(
         serde_json::from_str(&items_json).map_err(|e| e.to_string())?;
     let count = db::queries::upsert_remote_items(&conn, &items).map_err(|e| e.to_string())?;
     if count > 0 {
-        let _ = app.emit("item-updated", ());
+        let _ = app.emit("item-updated", "remote-sync");
     }
     Ok(count)
 }
