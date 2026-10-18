@@ -1,12 +1,34 @@
 import React, { useEffect, useState } from "react";
-import { getContexts, createContext, sendTestNotification, triggerFollowupAlerts } from "./commands";
+import {
+  getContexts,
+  createContext,
+  updateContext,
+  deleteContext,
+  sendTestNotification,
+  triggerFollowupAlerts,
+} from "./commands";
 import ThemeToggle from "./ThemeToggle";
+import { PencilIcon, TrashIcon, CheckIcon, XIcon } from "./Icons";
 import type { Context, AppConfig } from "./types";
 
 interface SettingsProps {
   theme?: "dark" | "light";
   onThemeChange?: (theme: "dark" | "light") => void;
 }
+
+const PRESET_COLORS = [
+  "#6366f1", // Índigo
+  "#3b82f6", // Azul
+  "#06b6d4", // Ciano
+  "#10b981", // Esmeralda
+  "#22c55e", // Verde
+  "#f59e0b", // Âmbar
+  "#f97316", // Laranja
+  "#ef4444", // Vermelho
+  "#ec4899", // Rosa
+  "#8b5cf6", // Violeta
+  "#64748b", // Cinza / Ardósia
+];
 
 export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChange }) => {
   const [config, setConfig] = useState<AppConfig>(() => {
@@ -28,7 +50,10 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
 
   const [contexts, setContexts] = useState<Context[]>([]);
   const [newContextName, setNewContextName] = useState("");
-  const [newContextColor, setNewContextColor] = useState("#2563eb");
+  const [newContextColor, setNewContextColor] = useState("#6366f1");
+  const [editingContextId, setEditingContextId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState("#6366f1");
   const [saveStatus, setSaveStatus] = useState<string>("Salvo automaticamente");
 
   useEffect(() => {
@@ -53,8 +78,56 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
       const created = await createContext(name, newContextColor);
       setContexts((prev) => [...prev, created]);
       setNewContextName("");
+      setNewContextColor("#6366f1");
     } catch (err) {
       console.error("Erro ao criar contexto:", err);
+    }
+  };
+
+  const handleQuickColorChange = async (ctx: Context, newColor: string) => {
+    try {
+      const updated = await updateContext(ctx.id, ctx.name, newColor);
+      setContexts((prev) => prev.map((c) => (c.id === ctx.id ? updated : c)));
+    } catch (err) {
+      console.error("Erro ao atualizar cor do contexto:", err);
+    }
+  };
+
+  const startEditing = (ctx: Context) => {
+    setEditingContextId(ctx.id);
+    setEditName(ctx.name);
+    setEditColor(ctx.color || "#6366f1");
+  };
+
+  const cancelEditing = () => {
+    setEditingContextId(null);
+    setEditName("");
+    setEditColor("#6366f1");
+  };
+
+  const saveEditing = async (ctx: Context) => {
+    const name = editName.trim();
+    if (!name) return;
+    try {
+      const updated = await updateContext(ctx.id, name, editColor);
+      setContexts((prev) => prev.map((c) => (c.id === ctx.id ? updated : c)));
+      cancelEditing();
+    } catch (err) {
+      console.error("Erro ao atualizar contexto:", err);
+    }
+  };
+
+  const handleDeleteContext = async (ctx: Context) => {
+    const ok = window.confirm(`Deseja realmente excluir o contexto @${ctx.name}?`);
+    if (!ok) return;
+    try {
+      await deleteContext(ctx.id);
+      setContexts((prev) => prev.filter((c) => c.id !== ctx.id));
+      if (editingContextId === ctx.id) {
+        cancelEditing();
+      }
+    } catch (err) {
+      console.error("Erro ao excluir contexto:", err);
     }
   };
 
@@ -208,67 +281,201 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
       {/* Gerenciamento de Contextos */}
       <div className="card">
         <div className="card-header">
-          <span className="card-title">Contextos de Organização</span>
+          <div>
+            <span className="card-title">Contextos de Organização</span>
+            <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
+              Personalize o nome e as cores dos contextos. Clique diretamente no quadrado colorido para trocar de cor ou no lápis para editar.
+            </div>
+          </div>
           <span className="card-count">{contexts.length}</span>
         </div>
 
-        <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "14px" }}>
-          Contextos são grupos como Trabalho, Pessoal ou Projetos. Itens com contexto saem automaticamente do Inbox para a lista ativa.
-        </p>
-
         {/* Existing contexts list */}
         <div className="item-list" style={{ marginBottom: "16px" }}>
-          {contexts.map((ctx) => (
-            <div
-              key={ctx.id}
-              className="item-row"
-              style={{ padding: "8px 12px" }}
-            >
-              <div
-                style={{
-                  width: "12px",
-                  height: "12px",
-                  borderRadius: "3px",
-                  background: ctx.color || "var(--accent)",
-                }}
-              />
-              <span style={{ fontWeight: 500, fontSize: "13px", flex: 1 }}>
-                @{ctx.name}
-              </span>
-              <span
-                style={{
-                  fontSize: "11px",
-                  color: ctx.sync_enabled ? "var(--success-text)" : "var(--text-muted)",
-                }}
-              >
-                {ctx.sync_enabled ? "Sincronização Ativa" : "Local apenas"}
-              </span>
-            </div>
-          ))}
+          {contexts.map((ctx) => {
+            const isEditing = editingContextId === ctx.id;
+            const currentColor = ctx.color || "var(--accent)";
+
+            if (isEditing) {
+              return (
+                <div key={ctx.id} className="context-row-item">
+                  <div className="context-edit-container">
+                    <div className="context-edit-inputs">
+                      <input
+                        type="text"
+                        className="capture-textarea"
+                        style={{ height: "34px", flex: 1, padding: "4px 8px" }}
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            saveEditing(ctx);
+                          } else if (e.key === "Escape") {
+                            cancelEditing();
+                          }
+                        }}
+                        placeholder="Nome do contexto"
+                        autoFocus
+                      />
+
+                      <div
+                        className="context-color-btn"
+                        style={{ background: editColor, width: "26px", height: "26px", borderRadius: "5px" }}
+                        title="Clique para escolher cor personalizada"
+                      >
+                        <input
+                          type="color"
+                          className="context-color-native-input"
+                          value={editColor}
+                          onChange={(e) => setEditColor(e.target.value)}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm btn-icon"
+                        onClick={() => saveEditing(ctx)}
+                        title="Salvar alterações"
+                        disabled={!editName.trim()}
+                      >
+                        <CheckIcon size={13} />
+                        <span>Salvar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm btn-icon"
+                        onClick={cancelEditing}
+                        title="Cancelar"
+                      >
+                        <XIcon size={13} />
+                      </button>
+                    </div>
+
+                    {/* Quick color preset dots */}
+                    <div className="color-palette-row">
+                      <span style={{ fontSize: "11px", color: "var(--text-muted)", marginRight: "4px" }}>
+                        Cores rápidas:
+                      </span>
+                      {PRESET_COLORS.map((col) => (
+                        <button
+                          key={col}
+                          type="button"
+                          className={`color-dot-choice ${editColor.toLowerCase() === col.toLowerCase() ? "selected" : ""}`}
+                          style={{ backgroundColor: col }}
+                          onClick={() => setEditColor(col)}
+                          title={col}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={ctx.id} className="context-row-item">
+                {/* Clickable color swatch button that opens color picker immediately */}
+                <div
+                  className="context-color-btn"
+                  style={{ background: currentColor }}
+                  title="Clique para trocar a cor deste contexto"
+                >
+                  <input
+                    type="color"
+                    className="context-color-native-input"
+                    value={ctx.color || "#6366f1"}
+                    onChange={(e) => handleQuickColorChange(ctx, e.target.value)}
+                    title="Escolha uma nova cor"
+                  />
+                </div>
+
+                <span style={{ fontWeight: 500, fontSize: "13px", flex: 1, color: "var(--text-primary)" }}>
+                  @{ctx.name}
+                </span>
+
+                <span
+                  style={{
+                    fontSize: "11px",
+                    color: ctx.sync_enabled ? "var(--success-text)" : "var(--text-muted)",
+                    marginRight: "4px",
+                  }}
+                >
+                  {ctx.sync_enabled ? "Sincronização Ativa" : "Local apenas"}
+                </span>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm btn-icon"
+                    onClick={() => startEditing(ctx)}
+                    title="Editar nome e cor"
+                  >
+                    <PencilIcon size={12} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm btn-icon"
+                    onClick={() => handleDeleteContext(ctx)}
+                    title="Excluir contexto"
+                    style={{ color: "var(--danger)" }}
+                  >
+                    <TrashIcon size={12} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* Add context form */}
-        <form onSubmit={handleAddContext} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <input
-            type="text"
-            className="capture-textarea"
-            style={{ height: "36px", flex: 1 }}
-            placeholder="Nome do novo contexto (ex: Freelance, Casa)"
-            value={newContextName}
-            onChange={(e) => setNewContextName(e.target.value)}
-          />
+        <form onSubmit={handleAddContext} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <input
+              type="text"
+              className="capture-textarea"
+              style={{ height: "36px", flex: 1 }}
+              placeholder="Nome do novo contexto (ex: Freelance, Casa)"
+              value={newContextName}
+              onChange={(e) => setNewContextName(e.target.value)}
+            />
 
-          <input
-            type="color"
-            value={newContextColor}
-            onChange={(e) => setNewContextColor(e.target.value)}
-            style={{ width: "36px", height: "36px", border: "none", cursor: "pointer", background: "transparent" }}
-            title="Escolha a cor do contexto"
-          />
+            <div
+              className="context-color-btn"
+              style={{ background: newContextColor, width: "32px", height: "32px", borderRadius: "6px" }}
+              title="Clique para escolher cor personalizada"
+            >
+              <input
+                type="color"
+                className="context-color-native-input"
+                value={newContextColor}
+                onChange={(e) => setNewContextColor(e.target.value)}
+              />
+            </div>
 
-          <button type="submit" className="btn btn-primary btn-sm" disabled={!newContextName.trim()}>
-            Adicionar
-          </button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={!newContextName.trim()}>
+              Adicionar
+            </button>
+          </div>
+
+          {/* Preset color pills for new context */}
+          <div className="color-palette-row" style={{ marginTop: "2px" }}>
+            <span style={{ fontSize: "11px", color: "var(--text-muted)", marginRight: "4px" }}>
+              Sugestões de cores:
+            </span>
+            {PRESET_COLORS.map((col) => (
+              <button
+                key={col}
+                type="button"
+                className={`color-dot-choice ${newContextColor.toLowerCase() === col.toLowerCase() ? "selected" : ""}`}
+                style={{ backgroundColor: col }}
+                onClick={() => setNewContextColor(col)}
+                title={col}
+              />
+            ))}
+          </div>
         </form>
       </div>
 

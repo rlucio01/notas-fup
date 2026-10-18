@@ -31,6 +31,15 @@ export async function createContext(name: string, color: string): Promise<Contex
   return JSON.parse(json);
 }
 
+export async function updateContext(id: string, name: string, color: string): Promise<Context> {
+  const json = await invoke<string>("update_context", { id, name, color });
+  return JSON.parse(json);
+}
+
+export async function deleteContext(id: string): Promise<void> {
+  await invoke("delete_context", { id });
+}
+
 export async function createItem(item: Partial<Item>): Promise<Item> {
   const json = await invoke<string>("create_item", { itemJson: JSON.stringify(item) });
   return JSON.parse(json);

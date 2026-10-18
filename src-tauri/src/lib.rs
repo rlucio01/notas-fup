@@ -111,6 +111,34 @@ fn create_context(
 }
 
 #[tauri::command]
+fn update_context(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    id: String,
+    name: String,
+    color: String,
+) -> Result<String, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let ctx = db::queries::update_context(&conn, &id, &name, &color).map_err(|e| e.to_string())?;
+    let _ = app.emit("context-updated", &id);
+    let _ = app.emit("item-updated", ());
+    serde_json::to_string(&ctx).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_context(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    id: String,
+) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    db::queries::delete_context(&conn, &id).map_err(|e| e.to_string())?;
+    let _ = app.emit("context-updated", &id);
+    let _ = app.emit("item-updated", ());
+    Ok(())
+}
+
+#[tauri::command]
 fn add_attachment(
     app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<rusqlite::Connection>>,
@@ -344,6 +372,8 @@ pub fn run() {
             import_items,
             get_contexts,
             create_context,
+            update_context,
+            delete_context,
             get_done_items,
             get_review_items,
             save_capture,

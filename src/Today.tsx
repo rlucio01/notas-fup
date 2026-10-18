@@ -52,6 +52,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     let unlistenCreated: (() => void) | undefined;
     let unlistenUpdated: (() => void) | undefined;
     let unlistenImported: (() => void) | undefined;
+    let unlistenContext: (() => void) | undefined;
 
     listen("item-created", () => loadData()).then((un) => {
       unlistenCreated = un;
@@ -62,11 +63,15 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     listen("items-imported", () => loadData()).then((un) => {
       unlistenImported = un;
     });
+    listen("context-updated", () => loadData()).then((un) => {
+      unlistenContext = un;
+    });
 
     return () => {
       unlistenCreated?.();
       unlistenUpdated?.();
       unlistenImported?.();
+      unlistenContext?.();
     };
   }, [loadData]);
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { getInboxItems, getContexts, updateItem, reorderItems } from "./commands";
 import { parseDateToken } from "./capture-syntax";
 import { EditModal } from "./EditModal";
@@ -35,6 +36,26 @@ export const Inbox: React.FC = () => {
 
   useEffect(() => {
     loadData();
+
+    let unlistenCreated: (() => void) | undefined;
+    let unlistenUpdated: (() => void) | undefined;
+    let unlistenContext: (() => void) | undefined;
+
+    listen("item-created", () => loadData()).then((un) => {
+      unlistenCreated = un;
+    });
+    listen("item-updated", () => loadData()).then((un) => {
+      unlistenUpdated = un;
+    });
+    listen("context-updated", () => loadData()).then((un) => {
+      unlistenContext = un;
+    });
+
+    return () => {
+      unlistenCreated?.();
+      unlistenUpdated?.();
+      unlistenContext?.();
+    };
   }, [loadData]);
 
   const handleDrop = async (targetId: string, e?: React.DragEvent) => {

@@ -533,6 +533,46 @@ pub fn find_or_create_context(conn: &Connection, name: &str) -> Result<String> {
     Ok(ctx.id)
 }
 
+pub fn update_context(conn: &Connection, id: &str, name: &str, color: &str) -> Result<Context> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE contexts SET name = ?1, color = ?2, updated_at = ?3 WHERE id = ?4",
+        params![name, color, &now, id],
+    )?;
+
+    let mut stmt = conn.prepare(
+        "SELECT id, name, color, sync_enabled, archived, created_at, updated_at, deleted_at
+         FROM contexts WHERE id = ?1",
+    )?;
+    let ctx = stmt.query_row([id], |row| {
+        Ok(Context {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            color: row.get(2)?,
+            sync_enabled: row.get(3)?,
+            archived: row.get(4)?,
+            created_at: row.get(5)?,
+            updated_at: row.get(6)?,
+            deleted_at: row.get(7)?,
+        })
+    })?;
+
+    Ok(ctx)
+}
+
+pub fn delete_context(conn: &Connection, id: &str) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE contexts SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2",
+        params![&now, id],
+    )?;
+    conn.execute(
+        "UPDATE items SET context_id = NULL, updated_at = ?1 WHERE context_id = ?2",
+        params![&now, id],
+    )?;
+    Ok(())
+}
+
 // ── Import proposed items ───────────────────────────────────────────────
 
 pub fn import_proposed_items(conn: &Connection, proposed: &[ProposedItem]) -> Result<Vec<Item>> {
@@ -980,6 +1020,14 @@ mod tests {
 
         let all = get_contexts(&conn).unwrap();
         assert_eq!(all.len(), 1);
+
+        let updated = update_context(&conn, &ctx.id, "Pessoal VIP", "#3b82f6").unwrap();
+        assert_eq!(updated.name, "Pessoal VIP");
+        assert_eq!(updated.color, "#3b82f6");
+
+        delete_context(&conn, &ctx.id).unwrap();
+        let all_after = get_contexts(&conn).unwrap();
+        assert_eq!(all_after.len(), 0);
     }
 
     #[test]
