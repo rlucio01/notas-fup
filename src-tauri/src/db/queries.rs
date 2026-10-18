@@ -36,6 +36,8 @@ pub struct Item {
     pub tags: Vec<String>,
     #[serde(default)]
     pub attachment_count: i64,
+    #[serde(default)]
+    pub position: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +55,8 @@ pub const ITEM_SELECT_COLS: &str = "i.id, i.context_id, i.kind, i.title, i.body,
         i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
         i.deleted_at, c.name, c.color,
         (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id),
-        (SELECT COUNT(*) FROM attachments a WHERE a.item_id = i.id)";
+        (SELECT COUNT(*) FROM attachments a WHERE a.item_id = i.id),
+        i.position";
 
 pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
     let tags_csv: Option<String> = row.get(19)?;
@@ -66,6 +69,7 @@ pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
         _ => vec![],
     };
     let attachment_count: i64 = row.get(20).unwrap_or(0);
+    let position: f64 = row.get(21).unwrap_or(0.0);
 
     Ok(Item {
         id: row.get(0)?,
@@ -89,6 +93,7 @@ pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
         context_color: row.get(18)?,
         tags,
         attachment_count,
+        position,
     })
 }
 
@@ -197,6 +202,7 @@ pub fn get_today_items(conn: &Connection) -> Result<Vec<Item>> {
              WHEN i.status = 'inbox' THEN 4
              ELSE 5
            END,
+           i.position ASC,
            i.created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -215,7 +221,7 @@ pub fn get_inbox_items(conn: &Connection) -> Result<Vec<Item>> {
          FROM items i
          LEFT JOIN contexts c ON i.context_id = c.id
          WHERE i.deleted_at IS NULL AND i.status = 'inbox'
-         ORDER BY i.created_at DESC"
+         ORDER BY i.position ASC, i.created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
     let items = stmt
@@ -357,6 +363,7 @@ pub fn insert_item(conn: &Connection, new: &NewItem) -> Result<Item> {
         context_color: None,
         tags: new.tags.clone(),
         attachment_count: 0,
+        position: 0.0,
     })
 }
 
@@ -634,6 +641,15 @@ pub fn delete_attachment(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn reorder_items(conn: &Connection, item_ids: &[String]) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    let mut stmt = conn.prepare("UPDATE items SET position = ?1, updated_at = ?2 WHERE id = ?3")?;
+    for (index, id) in item_ids.iter().enumerate() {
+        stmt.execute(params![index as f64, &now, id])?;
+    }
+    Ok(())
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -643,6 +659,58 @@ mod tests {
 
     fn setup() -> Connection {
         db::init_memory().unwrap()
+    }
+
+    #[test]
+    fn test_reorder_items() {
+        let conn = setup();
+        let item1 = insert_item(
+            &conn,
+            &NewItem {
+                title: "First item".to_string(),
+                body: None,
+                context_id: None,
+                kind: "task".to_string(),
+                status: "inbox".to_string(),
+                waiting_on: None,
+                followup_at: None,
+                due_at: None,
+                ticket_ref: None,
+                url: None,
+                source: "manual".to_string(),
+                origin_app: None,
+                tags: vec![],
+            },
+        )
+        .unwrap();
+
+        let item2 = insert_item(
+            &conn,
+            &NewItem {
+                title: "Second item".to_string(),
+                body: None,
+                context_id: None,
+                kind: "task".to_string(),
+                status: "inbox".to_string(),
+                waiting_on: None,
+                followup_at: None,
+                due_at: None,
+                ticket_ref: None,
+                url: None,
+                source: "manual".to_string(),
+                origin_app: None,
+                tags: vec![],
+            },
+        )
+        .unwrap();
+
+        // Reorder putting item2 first, item1 second
+        reorder_items(&conn, &[item2.id.clone(), item1.id.clone()]).unwrap();
+
+        let inboxes = get_inbox_items(&conn).unwrap();
+        assert_eq!(inboxes.len(), 2);
+        assert_eq!(inboxes[0].id, item2.id);
+        assert_eq!(inboxes[1].id, item1.id);
     }
 
     #[test]

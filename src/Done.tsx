@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getDoneItems, updateItem, getContexts } from "./commands";
 import { EditModal } from "./EditModal";
+import { PencilIcon } from "./Icons";
 import type { Item, Context } from "./types";
 
 export const Done: React.FC = () => {
@@ -131,11 +132,12 @@ export const Done: React.FC = () => {
 
               <div className="item-actions">
                 <button
-                  className="btn btn-secondary btn-sm"
+                  className="btn btn-secondary btn-sm btn-icon"
                   onClick={() => setEditingItem(item)}
                   title="Editar e Reclassificar"
                 >
-                  Editar
+                  <PencilIcon size={12} />
+                  <span>Editar</span>
                 </button>
                 <button
                   className="btn btn-secondary btn-sm"

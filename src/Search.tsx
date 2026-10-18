@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { searchItems, getContexts, updateItem } from "./commands";
 import { EditModal } from "./EditModal";
+import { PencilIcon, LinkIcon } from "./Icons";
 import type { Item, Context } from "./types";
 
 export const Search: React.FC = () => {
@@ -242,11 +243,12 @@ export const Search: React.FC = () => {
 
                 <div className="item-actions">
                   <button
-                    className="btn btn-secondary btn-sm"
+                    className="btn btn-secondary btn-sm btn-icon"
                     onClick={() => setEditingItem(item)}
                     title="Editar e Reclassificar"
                   >
-                    Editar
+                    <PencilIcon size={12} />
+                    <span>Editar</span>
                   </button>
 
                   {item.url && (
@@ -254,9 +256,10 @@ export const Search: React.FC = () => {
                       href={item.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="btn btn-secondary btn-sm"
+                      className="btn btn-secondary btn-sm btn-icon"
                     >
-                      Link
+                      <LinkIcon size={12} />
+                      <span>Link</span>
                     </a>
                   )}
                 </div>

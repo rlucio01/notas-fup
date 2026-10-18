@@ -2,7 +2,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 
 /// Current schema version. Bump this when adding new migrations.
-const CURRENT_VERSION: i64 = 1;
+const CURRENT_VERSION: i64 = 2;
 
 /// Run all pending migrations in order.
 pub fn run_all(conn: &Connection) -> Result<()> {
@@ -23,6 +23,9 @@ pub fn run_all(conn: &Connection) -> Result<()> {
 
     if version < 1 {
         migrate_v1(conn)?;
+    }
+    if version < 2 {
+        migrate_v2(conn)?;
     }
 
     // Update version marker.
@@ -80,6 +83,7 @@ fn migrate_v1(conn: &Connection) -> Result<()> {
             created_at   TEXT NOT NULL,
             updated_at   TEXT NOT NULL,
             deleted_at   TEXT,
+            position     REAL NOT NULL DEFAULT 0.0,
             FOREIGN KEY (context_id) REFERENCES contexts(id)
         );
 
@@ -88,6 +92,7 @@ fn migrate_v1(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_items_followup ON items(followup_at);
         CREATE INDEX IF NOT EXISTS idx_items_due ON items(due_at);
         CREATE INDEX IF NOT EXISTS idx_items_waiting ON items(waiting_on);
+        CREATE INDEX IF NOT EXISTS idx_items_position ON items(position);
 
         -- Tags
         CREATE TABLE IF NOT EXISTS tags (
@@ -156,6 +161,30 @@ fn migrate_v1(conn: &Connection) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO meta (key, value) VALUES ('device_id', ?1)",
         [&device_id],
+    )?;
+
+    Ok(())
+}
+
+fn migrate_v2(conn: &Connection) -> Result<()> {
+    let has_position: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('items') WHERE name = 'position'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_position {
+        conn.execute(
+            "ALTER TABLE items ADD COLUMN position REAL NOT NULL DEFAULT 0.0",
+            [],
+        )?;
+    }
+
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_items_position ON items(position);",
     )?;
 
     Ok(())

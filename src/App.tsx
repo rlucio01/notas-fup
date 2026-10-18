@@ -8,6 +8,8 @@ import Import from "./Import";
 import Review from "./Review";
 import Done from "./Done";
 import Settings from "./Settings";
+import ThemeToggle from "./ThemeToggle";
+import { PlusIcon } from "./Icons";
 import "./App.css";
 
 type TabId = "today" | "inbox" | "search" | "import" | "review" | "done" | "settings";
@@ -232,20 +234,16 @@ export const App: React.FC = () => {
             <p className="page-subtitle">{getPageSubtitle(activeTab)}</p>
           </div>
 
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={toggleTheme}
-              title="Alternar entre tema Claro e Escuro"
-            >
-              {theme === "dark" ? "Tema Claro" : "Tema Escuro"}
-            </button>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
 
             <button
-              className="btn btn-secondary btn-sm"
+              className="btn btn-secondary btn-sm btn-icon"
               onClick={() => openCaptureWindow()}
+              title="Abrir janela de captura rápida (Ctrl+Alt+N)"
             >
-              Nova Nota (Ctrl+Alt+N)
+              <PlusIcon size={13} />
+              <span>Nova Nota</span>
             </button>
           </div>
         </header>

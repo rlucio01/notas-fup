@@ -124,3 +124,7 @@ export async function getItemAttachments(itemId: string): Promise<import("./type
 export async function deleteAttachment(id: string, itemId?: string): Promise<void> {
   await invoke("delete_attachment", { id, itemId: itemId ?? null });
 }
+
+export async function reorderItems(itemIds: string[]): Promise<void> {
+  await invoke("reorder_items", { itemIds });
+}

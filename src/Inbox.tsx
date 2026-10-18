@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { getInboxItems, getContexts, updateItem } from "./commands";
+import { getInboxItems, getContexts, updateItem, reorderItems } from "./commands";
 import { parseDateToken } from "./capture-syntax";
 import { EditModal } from "./EditModal";
+import { PencilIcon, FolderIcon, CalendarIcon, TrashIcon, GripIcon } from "./Icons";
 import type { Item, Context } from "./types";
 
 export const Inbox: React.FC = () => {
@@ -10,6 +11,10 @@ export const Inbox: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Drag and drop state for prioritizing inbox items
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   // Active modal/prompt state for keyboard shortcuts
   const [promptMode, setPromptMode] = useState<"context" | "tag" | "date" | "waiting" | null>(null);
@@ -31,6 +36,26 @@ export const Inbox: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleDrop = async (targetId: string) => {
+    if (!draggedId || draggedId === targetId) return;
+    const list = [...items];
+    const fromIdx = list.findIndex((i) => i.id === draggedId);
+    const toIdx = list.findIndex((i) => i.id === targetId);
+    if (fromIdx >= 0 && toIdx >= 0) {
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      setItems(list);
+      setSelectedIndex(toIdx);
+      try {
+        await reorderItems(list.map((i) => i.id));
+      } catch (err) {
+        console.error("Erro ao reordenar inbox:", err);
+      }
+    }
+    setDraggedId(null);
+    setDragOverId(null);
+  };
 
   const selectedItem = items[selectedIndex] || null;
 
@@ -177,12 +202,51 @@ export const Inbox: React.FC = () => {
         <div className="item-list">
           {items.map((item, index) => {
             const isSelected = index === selectedIndex;
+            const isBeingDragged = draggedId === item.id;
+            const isDragOver = dragOverId === item.id && draggedId !== item.id;
+
             return (
               <div
                 key={item.id}
-                className={`item-row ${isSelected ? "selected" : ""}`}
+                className={`item-row ${isSelected ? "selected" : ""} ${isBeingDragged ? "is-dragging" : ""} ${isDragOver ? "drag-over-top" : ""}`}
                 onClick={() => setSelectedIndex(index)}
+                draggable={true}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", item.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  setDraggedId(item.id);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDragEnter={() => {
+                  if (draggedId && draggedId !== item.id) {
+                    setDragOverId(item.id);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverId === item.id) {
+                    setDragOverId(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  handleDrop(item.id);
+                }}
+                onDragEnd={() => {
+                  setDraggedId(null);
+                  setDragOverId(null);
+                }}
               >
+                <span
+                  className="drag-handle"
+                  title="Arraste para priorizar no Inbox"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <GripIcon size={14} />
+                </span>
+
                 <input
                   type="checkbox"
                   className="item-checkbox"
@@ -238,17 +302,18 @@ export const Inbox: React.FC = () => {
 
                 <div className="item-actions">
                   <button
-                    className="btn btn-secondary btn-sm"
+                    className="btn btn-secondary btn-sm btn-icon"
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingItem(item);
                     }}
                     title="Editar e Reclassificar Nota (E)"
                   >
-                    Editar
+                    <PencilIcon size={12} />
+                    <span>Editar</span>
                   </button>
                   <button
-                    className="btn btn-secondary btn-sm"
+                    className="btn btn-secondary btn-sm btn-icon"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedIndex(index);
@@ -256,10 +321,11 @@ export const Inbox: React.FC = () => {
                     }}
                     title="Definir contexto (C)"
                   >
-                    Contexto
+                    <FolderIcon size={12} />
+                    <span>Contexto</span>
                   </button>
                   <button
-                    className="btn btn-secondary btn-sm"
+                    className="btn btn-secondary btn-sm btn-icon"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedIndex(index);
@@ -267,10 +333,11 @@ export const Inbox: React.FC = () => {
                     }}
                     title="Definir data (D)"
                   >
-                    Data
+                    <CalendarIcon size={12} />
+                    <span>Data</span>
                   </button>
                   <button
-                    className="btn btn-danger btn-sm"
+                    className="btn btn-danger btn-sm btn-icon"
                     onClick={async (e) => {
                       e.stopPropagation();
                       await updateItem({ id: item.id, status: "dropped" });
@@ -278,7 +345,8 @@ export const Inbox: React.FC = () => {
                     }}
                     title="Descartar (Del)"
                   >
-                    Descartar
+                    <TrashIcon size={12} />
+                    <span>Descartar</span>
                   </button>
                 </div>
               </div>

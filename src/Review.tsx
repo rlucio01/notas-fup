@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getReviewItems, updateItem, getContexts } from "./commands";
 import { EditModal } from "./EditModal";
+import { PencilIcon, CalendarIcon } from "./Icons";
 import type { ReviewData, Item, Context } from "./types";
 
 export const Review: React.FC = () => {
@@ -113,17 +114,20 @@ export const Review: React.FC = () => {
         </div>
         <div className="item-actions">
           <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm btn-icon"
             onClick={() => setEditingItem(item)}
             title="Editar ou Reclassificar (Contexto, Tags, Datas)"
           >
-            Editar
+            <PencilIcon size={12} />
+            <span>Editar</span>
           </button>
           <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm btn-icon"
             onClick={() => handlePostponeTomorrow(item)}
+            title="Adiar para amanhã (+1 dia)"
           >
-            +1 dia
+            <CalendarIcon size={12} />
+            <span>+1 dia</span>
           </button>
         </div>
       </div>

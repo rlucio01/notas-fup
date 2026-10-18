@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getContexts, createContext } from "./commands";
+import ThemeToggle from "./ThemeToggle";
 import type { Context, AppConfig } from "./types";
 
 interface SettingsProps {
@@ -77,25 +78,13 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
             <div>
               <div style={{ fontWeight: 500 }}>Tema Visual</div>
               <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
-                Escolha entre o tema Escuro de alto contraste ou o tema Claro
+                Alterne suavemente entre o tema Escuro de alto contraste e o tema Claro
               </div>
             </div>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${theme === "dark" ? "btn-primary" : "btn-secondary"}`}
-                onClick={() => onThemeChange?.("dark")}
-              >
-                Escuro (Padrão)
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${theme === "light" ? "btn-primary" : "btn-secondary"}`}
-                onClick={() => onThemeChange?.("light")}
-              >
-                Claro
-              </button>
-            </div>
+            <ThemeToggle
+              theme={theme}
+              onToggle={() => onThemeChange?.(theme === "dark" ? "light" : "dark")}
+            />
           </div>
         </div>
       </div>

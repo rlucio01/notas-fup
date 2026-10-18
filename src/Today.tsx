@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getTodayItems, getInboxItems, updateItem, getContexts } from "./commands";
+import { getTodayItems, getInboxItems, updateItem, getContexts, reorderItems } from "./commands";
 import { computeTodayBlocks } from "./today-blocks";
 import { EditModal } from "./EditModal";
+import { PencilIcon, CalendarIcon, LinkIcon, GripIcon } from "./Icons";
 import type { Item, TodayBlocks, Context } from "./types";
 
 interface TodayProps {
@@ -19,6 +20,11 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const [contexts, setContexts] = useState<Context[]>([]);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Drag and drop state for prioritizing tasks
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragSection, setDragSection] = useState<"today" | "overdue" | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -83,12 +89,102 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     loadData();
   };
 
-  const renderItemRow = (item: Item, showOverdueBadge = false) => {
+  const handleDrop = async (targetId: string, section: "today" | "overdue") => {
+    if (!draggedId || draggedId === targetId || dragSection !== section) return;
+
+    if (section === "today") {
+      const list = [...blocks.today];
+      const fromIdx = list.findIndex((i) => i.id === draggedId);
+      const toIdx = list.findIndex((i) => i.id === targetId);
+      if (fromIdx >= 0 && toIdx >= 0) {
+        const [moved] = list.splice(fromIdx, 1);
+        list.splice(toIdx, 0, moved);
+        setBlocks((prev) => ({ ...prev, today: list }));
+        try {
+          await reorderItems(list.map((i) => i.id));
+        } catch (err) {
+          console.error("Erro ao reordenar tarefas:", err);
+        }
+      }
+    } else if (section === "overdue") {
+      const list = [...blocks.overdue];
+      const fromIdx = list.findIndex((i) => i.id === draggedId);
+      const toIdx = list.findIndex((i) => i.id === targetId);
+      if (fromIdx >= 0 && toIdx >= 0) {
+        const [moved] = list.splice(fromIdx, 1);
+        list.splice(toIdx, 0, moved);
+        setBlocks((prev) => ({ ...prev, overdue: list }));
+        try {
+          await reorderItems(list.map((i) => i.id));
+        } catch (err) {
+          console.error("Erro ao reordenar atrasadas:", err);
+        }
+      }
+    }
+
+    setDraggedId(null);
+    setDragOverId(null);
+    setDragSection(null);
+  };
+
+  const renderItemRow = (
+    item: Item,
+    showOverdueBadge = false,
+    section?: "today" | "overdue" | "waiting"
+  ) => {
     const isDone = item.status === "done";
     const dateLabel = item.due_at || item.followup_at;
+    const isDraggable = section === "today" || section === "overdue";
+    const isBeingDragged = draggedId === item.id;
+    const isDragOver = dragOverId === item.id && draggedId !== item.id;
 
     return (
-      <div key={item.id} className="item-row">
+      <div
+        key={item.id}
+        className={`item-row ${isBeingDragged ? "is-dragging" : ""} ${isDragOver ? "drag-over-top" : ""}`}
+        draggable={isDraggable}
+        onDragStart={(e) => {
+          if (!isDraggable) return;
+          e.dataTransfer.setData("text/plain", item.id);
+          e.dataTransfer.effectAllowed = "move";
+          setDraggedId(item.id);
+          setDragSection(section);
+        }}
+        onDragOver={(e) => {
+          if (!isDraggable || dragSection !== section) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }}
+        onDragEnter={() => {
+          if (isDraggable && draggedId && draggedId !== item.id && dragSection === section) {
+            setDragOverId(item.id);
+          }
+        }}
+        onDragLeave={() => {
+          if (dragOverId === item.id) {
+            setDragOverId(null);
+          }
+        }}
+        onDrop={(e) => {
+          if (!isDraggable || !section) return;
+          e.preventDefault();
+          handleDrop(item.id, section);
+        }}
+        onDragEnd={() => {
+          setDraggedId(null);
+          setDragOverId(null);
+          setDragSection(null);
+        }}
+      >
+        {isDraggable && (
+          <span
+            className="drag-handle"
+            title="Arraste para definir a prioridade (solte acima ou abaixo)"
+          >
+            <GripIcon size={14} />
+          </span>
+        )}
+
         <input
           type="checkbox"
           className="item-checkbox"
@@ -162,25 +258,28 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
               href={item.url}
               target="_blank"
               rel="noreferrer"
-              className="btn btn-secondary btn-sm"
+              className="btn btn-secondary btn-sm btn-icon"
               title={item.url}
             >
-              Link
+              <LinkIcon size={12} />
+              <span>Link</span>
             </a>
           )}
           <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm btn-icon"
             onClick={() => setEditingItem(item)}
             title="Editar ou Reclassificar (Contexto, Tags, Datas)"
           >
-            Editar
+            <PencilIcon size={12} />
+            <span>Editar</span>
           </button>
           <button
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm btn-icon"
             onClick={() => handlePostponeTomorrow(item)}
             title="Adiar para amanhã"
           >
-            +1 dia
+            <CalendarIcon size={12} />
+            <span>+1 dia</span>
           </button>
         </div>
       </div>
@@ -215,7 +314,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
             </div>
           </div>
           <div className="item-list">
-            {blocks.overdue.map((item) => renderItemRow(item, true))}
+            {blocks.overdue.map((item) => renderItemRow(item, true, "overdue"))}
           </div>
         </div>
       )}
@@ -234,7 +333,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           </div>
         ) : (
           <div className="item-list">
-            {blocks.today.map((item) => renderItemRow(item, false))}
+            {blocks.today.map((item) => renderItemRow(item, false, "today"))}
           </div>
         )}
       </div>
@@ -272,7 +371,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
                   {person} ({items.length})
                 </div>
                 <div className="item-list">
-                  {items.map((item) => renderItemRow(item, false))}
+                  {items.map((item) => renderItemRow(item, false, "waiting"))}
                 </div>
               </div>
             ))}

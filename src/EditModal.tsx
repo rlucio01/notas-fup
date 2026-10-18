@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { updateItem, createContext, getItemAttachments, addAttachment, deleteAttachment } from "./commands";
+import { PencilIcon } from "./Icons";
 import type { Item, Context, ItemStatus, Attachment } from "./types";
 
 interface EditModalProps {
@@ -209,7 +210,10 @@ export const EditModal: React.FC<EditModalProps> = ({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span className="modal-title">Editar e Reclassificar Nota</span>
+          <span className="modal-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <PencilIcon size={16} />
+            <span>Editar e Reclassificar Nota</span>
+          </span>
           <button className="modal-close-btn" onClick={onClose} title="Fechar (Esc)">
             &times;
           </button>

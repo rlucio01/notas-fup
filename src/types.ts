@@ -31,6 +31,7 @@ export interface Item {
   origin_app: string | null;
   tags?: string[];
   attachment_count?: number;
+  position?: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

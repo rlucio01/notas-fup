@@ -151,6 +151,18 @@ fn delete_attachment(
 }
 
 #[tauri::command]
+fn reorder_items(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    item_ids: Vec<String>,
+) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    db::queries::reorder_items(&conn, &item_ids).map_err(|e| e.to_string())?;
+    let _ = app.emit("item-updated", ());
+    Ok(())
+}
+
+#[tauri::command]
 fn get_done_items(
     state: tauri::State<'_, Mutex<rusqlite::Connection>>,
 ) -> Result<String, String> {
@@ -322,6 +334,7 @@ pub fn run() {
             add_attachment,
             get_item_attachments,
             delete_attachment,
+            reorder_items,
         ])
         .setup(|app| {
             // 1. Initialize SQLite database
