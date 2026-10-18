@@ -399,10 +399,20 @@ export async function checkLatestRelease(): Promise<GitHubReleaseInfo | null> {
 
 export async function downloadAndInstallUpdate(installerUrl: string): Promise<string> {
   if (isTauri()) {
-    return await invoke<string>("download_and_install_update", { url: installerUrl });
+    try {
+      return await invoke<string>("download_and_install_update", { url: installerUrl });
+    } catch {
+      try {
+        const { openUrl } = await import("@tauri-apps/plugin-opener");
+        await openUrl(installerUrl);
+      } catch {
+        window.open(installerUrl, "_blank");
+      }
+      return "Abrindo download do instalador no navegador...";
+    }
   } else {
     window.open(installerUrl, "_blank");
-    return "Download do instalador iniciado";
+    return "Download do instalador iniciado no navegador";
   }
 }
 

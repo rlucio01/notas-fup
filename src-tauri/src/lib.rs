@@ -340,29 +340,38 @@ fn get_active_app() -> Option<String> {
 }
 
 #[tauri::command]
-fn download_and_install_update(url: String) -> Result<String, String> {
+fn download_and_install_update(app: tauri::AppHandle, url: String) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
-        let safe_url = url.replace('\'', "''");
-        let ps_script = format!(
-            "$temp = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'NotasFUP_setup_update.exe'); \
-             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
-             (New-Object System.Net.WebClient).DownloadFile('{safe_url}', $temp); \
-             Start-Process $temp;"
-        );
 
-        Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
-            .spawn()
-            .map_err(|e| format!("Falha ao iniciar download da atualização: {e}"))?;
+        // Tenta baixar via curl.exe diretamente na pasta Downloads do usuário (sem bloqueio de execução)
+        let download_path = std::env::var("USERPROFILE")
+            .map(|p| std::path::PathBuf::from(p).join("Downloads").join("NotasFUP_setup_update.exe"))
+            .unwrap_or_else(|_| std::env::temp_dir().join("NotasFUP_setup_update.exe"));
 
-        Ok("Download iniciado e instalador em execução".to_string())
+        let path_str = download_path.to_string_lossy().to_string();
+
+        let curl_ok = Command::new("curl.exe")
+            .args(["-fL", "-s", "-o", &path_str, &url])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if curl_ok && download_path.exists() {
+            let _ = app.opener().open_path(&path_str, None::<&str>);
+            return Ok("Instalador baixado com sucesso. Executando instalação...".to_string());
+        }
+
+        // Fallback resiliente: abre a URL diretamente no navegador padrão via Windows Shell
+        let _ = app.opener().open_url(&url, None::<&str>);
+        Ok("Abrindo download do instalador no navegador padrão...".to_string())
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = url;
-        Err("Atualização automática direta disponível apenas para Windows".to_string())
+        let _ = app.opener().open_url(&url, None::<&str>);
+        Ok("Abrindo download do instalador no navegador...".to_string())
     }
 }
 
