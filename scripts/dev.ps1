@@ -29,6 +29,15 @@ switch ($Command) {
         powershell -ExecutionPolicy Bypass -File scripts\measure_memory.ps1
     }
     "dev" {
+        Write-Host "Limpando processos residuais e liberando atalhos..." -ForegroundColor Cyan
+        Stop-Process -Name "notas-fup" -Force -ErrorAction SilentlyContinue
+        $portConns = Get-NetTCPConnection -LocalPort 1420 -ErrorAction SilentlyContinue
+        if ($portConns) {
+            $pids = $portConns | Select-Object -ExpandProperty OwningProcess -Unique
+            foreach ($p in $pids) {
+                Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
+            }
+        }
         Write-Host "Iniciando Tauri em modo de desenvolvimento..." -ForegroundColor Cyan
         npm run tauri dev
     }
