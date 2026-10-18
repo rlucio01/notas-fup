@@ -1534,3 +1534,50 @@ body, html, #root {
   width: 100%;
 }
 
+/* Priority Nudge Controls */
+.priority-badge-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  user-select: none;
+}
+
+.priority-nudge-arrows {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+
+.item-row:hover .priority-nudge-arrows {
+  opacity: 1;
+}
+
+.btn-priority-nudge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.12s ease;
+  line-height: 1;
+}
+
+.btn-priority-nudge:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.btn-priority-nudge:disabled {
+  opacity: 0.15;
+  cursor: default;
+}
+
+

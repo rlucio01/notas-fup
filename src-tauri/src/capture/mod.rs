@@ -25,6 +25,7 @@ pub async fn open_capture_window(app: AppHandle) -> Result<(), String> {
     .resizable(false)
     .skip_taskbar(true)
     .shadow(true)
+    .disable_drag_drop_handler()
     .devtools(cfg!(debug_assertions))
     .build()
     .map_err(|e| e.to_string())?;
@@ -59,6 +60,7 @@ pub async fn open_main_window(app: AppHandle) -> Result<(), String> {
     .decorations(true)
     .center()
     .resizable(true)
+    .disable_drag_drop_handler()
     .devtools(cfg!(debug_assertions))
     .build()
     .map_err(|e| e.to_string())?;

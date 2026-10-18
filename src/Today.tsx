@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getTodayItems, getInboxItems, updateItem, getContexts, reorderItems, getFollowupAlerts } from "./commands";
 import { computeTodayBlocks } from "./today-blocks";
 import { EditModal } from "./EditModal";
-import { CalendarIcon, LinkIcon, GripIcon, PaperclipIcon } from "./Icons";
+import { CalendarIcon, LinkIcon, GripIcon, PaperclipIcon, ChevronUpIcon, ChevronDownIcon } from "./Icons";
 import type { Item, Context, FollowupAlerts } from "./types";
 
 interface TodayProps {
@@ -175,14 +175,15 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const handleDrop = async (
     targetId: string,
     section: "executing" | "today" | "overdue",
-    e?: React.DragEvent
+    e?: React.DragEvent,
+    explicitSourceId?: string
   ) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    const sourceId = e?.dataTransfer?.getData("text/plain") || draggedId;
-    if (!sourceId || sourceId === targetId || (dragSection && dragSection !== section)) {
+    const sourceId = explicitSourceId || e?.dataTransfer?.getData("text/plain") || draggedId;
+    if (!sourceId || sourceId === targetId || (!explicitSourceId && dragSection && dragSection !== section)) {
       setDraggedId(null);
       setDragOverId(null);
       setDragSection(null);
@@ -246,6 +247,16 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     setDraggedId(null);
     setDragOverId(null);
     setDragSection(null);
+  };
+
+  const handleNudgePriority = (item: Item, direction: "up" | "down") => {
+    const list = [...blocks.executing];
+    const idx = list.findIndex((i) => i.id === item.id);
+    if (idx < 0) return;
+    const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+    const targetItem = list[targetIdx];
+    handleDrop(targetItem.id, "executing", undefined, item.id);
   };
 
   const renderItemRow = (
@@ -345,14 +356,37 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         >
           <div className="item-title-line">
             {priorityIndex !== undefined && (
-              <span
-                className={`badge badge-priority ${priorityIndex === 0 ? "top-focus" : ""}`}
-                title={`Prioridade #${priorityIndex + 1}${
-                  priorityIndex === 0 ? " (Foco Principal)" : ""
-                }`}
-              >
-                #{priorityIndex + 1}
-              </span>
+              <div className="priority-badge-group" onClick={(e) => e.stopPropagation()}>
+                <span
+                  className={`badge badge-priority ${priorityIndex === 0 ? "top-focus" : ""}`}
+                  title={`Prioridade #${priorityIndex + 1}${
+                    priorityIndex === 0 ? " (Foco Principal)" : ""
+                  }`}
+                >
+                  #{priorityIndex + 1}
+                </span>
+
+                <div className="priority-nudge-arrows">
+                  <button
+                    type="button"
+                    className="btn-priority-nudge"
+                    disabled={priorityIndex === 0}
+                    onClick={() => handleNudgePriority(item, "up")}
+                    title="Aumentar prioridade (mover para cima)"
+                  >
+                    <ChevronUpIcon size={10} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-priority-nudge"
+                    disabled={priorityIndex === blocks.executing.length - 1}
+                    onClick={() => handleNudgePriority(item, "down")}
+                    title="Diminuir prioridade (mover para baixo)"
+                  >
+                    <ChevronDownIcon size={10} />
+                  </button>
+                </div>
+              </div>
             )}
 
             <span className={`item-title ${isDone ? "done" : ""}`}>
