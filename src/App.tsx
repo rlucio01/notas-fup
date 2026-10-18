@@ -260,45 +260,25 @@ export const App: React.FC = () => {
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
         <div className="sidebar-header">
-          {sidebarCollapsed ? (
-            <div className="sidebar-collapsed-header-box">
-              <img
-                src="/favicon.png"
-                alt="Notas FUP Logo"
-                className="sidebar-brand-icon-collapsed"
-                onClick={toggleSidebar}
-                title="Expandir barra lateral (Ctrl+B)"
-              />
-              <button
-                className="sidebar-toggle-btn"
-                onClick={toggleSidebar}
-                title="Expandir barra lateral (Ctrl+B)"
-              >
-                »
-              </button>
+          <div className="sidebar-brand-box">
+            <img
+              src="/favicon.png"
+              alt="Notas FUP Logo"
+              className="sidebar-brand-icon"
+              onClick={toggleSidebar}
+            />
+            <div className="sidebar-brand-text">
+              <div className="brand-title">Notas FUP</div>
+              <div className="brand-subtitle">Captura e Follow-up</div>
             </div>
-          ) : (
-            <>
-              <div className="sidebar-brand-box">
-                <img
-                  src="/favicon.png"
-                  alt="Notas FUP Logo"
-                  className="sidebar-brand-icon"
-                />
-                <div className="sidebar-brand-text">
-                  <div className="brand-title">Notas FUP</div>
-                  <div className="brand-subtitle">Captura e Follow-up</div>
-                </div>
-              </div>
-              <button
-                className="sidebar-toggle-btn"
-                onClick={toggleSidebar}
-                title="Recolher barra lateral (Ctrl+B)"
-              >
-                «
-              </button>
-            </>
-          )}
+          </div>
+          <button
+            className="sidebar-toggle-btn"
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? "Expandir barra lateral (Ctrl+B)" : "Recolher barra lateral (Ctrl+B)"}
+          >
+            {sidebarCollapsed ? "»" : "«"}
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -366,6 +346,17 @@ export const App: React.FC = () => {
         {activeTab === "done" && <Done />}
         {activeTab === "settings" && <Settings theme={theme} onThemeChange={setTheme} />}
       </main>
+
+      {/* Botão Flutuante de Ação Rápida (FAB no Mobile) */}
+      <button
+        type="button"
+        className="mobile-fab-btn"
+        onClick={handleOpenCaptureOrNew}
+        title="Criar nova nota"
+        aria-label="Criar nova nota"
+      >
+        <PlusIcon size={22} />
+      </button>
 
       {editingNewItem && (
         <EditModal
