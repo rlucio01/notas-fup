@@ -196,22 +196,22 @@ fn save_capture(
 }
 
 #[tauri::command]
-fn open_capture_window_cmd(app: tauri::AppHandle) -> Result<(), String> {
-    capture::open_capture_window(&app)
+async fn open_capture_window_cmd(app: tauri::AppHandle) -> Result<(), String> {
+    capture::open_capture_window(app).await
 }
 
 #[tauri::command]
-fn close_capture_window_cmd(app: tauri::AppHandle) {
+async fn close_capture_window_cmd(app: tauri::AppHandle) {
     capture::close_capture_window(&app);
 }
 
 #[tauri::command]
-fn open_main_window_cmd(app: tauri::AppHandle) -> Result<(), String> {
-    capture::open_main_window(&app)
+async fn open_main_window_cmd(app: tauri::AppHandle) -> Result<(), String> {
+    capture::open_main_window(app).await
 }
 
 #[tauri::command]
-fn close_main_window_cmd(app: tauri::AppHandle) {
+async fn close_main_window_cmd(app: tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.destroy();
     }
@@ -242,7 +242,10 @@ pub fn run() {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_focus();
             } else {
-                let _ = capture::open_main_window(app);
+                let h = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = capture::open_main_window(h).await;
+                });
             }
         }))
         .plugin(tauri_plugin_opener::init())

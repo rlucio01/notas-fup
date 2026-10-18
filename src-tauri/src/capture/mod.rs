@@ -4,7 +4,8 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// Open the fast, frameless, on-demand quick capture window.
-pub fn open_capture_window(app: &AppHandle) -> Result<(), String> {
+/// Must be async to avoid Windows deadlocks when called from IPC commands or events.
+pub async fn open_capture_window(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("capture") {
         let _ = w.show();
         let _ = w.set_focus();
@@ -12,12 +13,12 @@ pub fn open_capture_window(app: &AppHandle) -> Result<(), String> {
     }
 
     WebviewWindowBuilder::new(
-        app,
+        &app,
         "capture",
-        WebviewUrl::default(),
+        WebviewUrl::App("index.html#capture".into()),
     )
     .title("Captura Rápida")
-    .inner_size(640.0, 200.0)
+    .inner_size(640.0, 220.0)
     .decorations(false)
     .always_on_top(true)
     .center()
@@ -39,7 +40,8 @@ pub fn close_capture_window(app: &AppHandle) {
 }
 
 /// Open the full main application window on demand.
-pub fn open_main_window(app: &AppHandle) -> Result<(), String> {
+/// Must be async to avoid Windows deadlocks when called from IPC commands or events.
+pub async fn open_main_window(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.set_focus();
@@ -47,9 +49,9 @@ pub fn open_main_window(app: &AppHandle) -> Result<(), String> {
     }
 
     WebviewWindowBuilder::new(
-        app,
+        &app,
         "main",
-        WebviewUrl::default(),
+        WebviewUrl::App("index.html#main".into()),
     )
     .title("Notas FUP")
     .inner_size(980.0, 700.0)
@@ -72,7 +74,10 @@ pub fn register_global_shortcut(app: &AppHandle, shortcut_str: &str) -> Result<(
     app.global_shortcut()
         .on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
-                let _ = open_capture_window(&app_handle);
+                let h = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = open_capture_window(h).await;
+                });
             }
         })
         .map_err(|e| e.to_string())?;

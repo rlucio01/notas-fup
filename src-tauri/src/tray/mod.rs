@@ -14,7 +14,6 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let icon = match app.default_window_icon() {
         Some(i) => i.clone(),
         None => {
-            // Fallback: load icon from embedded bytes if needed
             return Err("default window icon not found".into());
         }
     };
@@ -26,10 +25,16 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         .tooltip("Notas FUP")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "capture" => {
-                let _ = crate::capture::open_capture_window(app);
+                let h = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::capture::open_capture_window(h).await;
+                });
             }
             "open" => {
-                let _ = crate::capture::open_main_window(app);
+                let h = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::capture::open_main_window(h).await;
+                });
             }
             "quit" => {
                 app.exit(0);
@@ -43,8 +48,10 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                let _ = crate::capture::open_capture_window(app);
+                let h = tray.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::capture::open_capture_window(h).await;
+                });
             }
         })
         .build(app)?;

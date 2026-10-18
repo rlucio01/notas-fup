@@ -55,12 +55,22 @@ export const Capture: React.FC = () => {
   return (
     <div className="capture-container">
       <div className="capture-header">
-        <span>Captura Rápida</span>
-        {originApp && (
-          <span className="origin-badge" title={originApp}>
-            {originApp}
-          </span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, overflow: "hidden" }}>
+          <span>Captura Rápida</span>
+          {originApp && (
+            <span className="origin-badge" title={originApp}>
+              {originApp}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="capture-close-btn"
+          onClick={() => closeCaptureWindow()}
+          title="Fechar (Esc)"
+        >
+          &times;
+        </button>
       </div>
 
       <textarea

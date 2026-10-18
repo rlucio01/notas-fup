@@ -1,6 +1,5 @@
 import React, { Component, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import App from "./App";
 import Capture from "./Capture";
 
@@ -64,16 +63,13 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-// Window detection: check query parameter or window label
-let isCapture = false;
-try {
-  const urlParams = new URLSearchParams(window.location.search);
-  const currentWindow = getCurrentWebviewWindow();
-  isCapture = urlParams.get("w") === "capture" || currentWindow.label === "capture";
-} catch {
-  const urlParams = new URLSearchParams(window.location.search);
-  isCapture = urlParams.get("w") === "capture";
-}
+// Window detection: check URL hash, query parameter, or Tauri window label
+const isCapture =
+  window.location.hash.includes("capture") ||
+  window.location.search.includes("w=capture") ||
+  (typeof window !== "undefined" &&
+    (window as unknown as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } })
+      ?.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === "capture");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
