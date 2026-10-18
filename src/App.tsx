@@ -11,10 +11,36 @@ import Settings from "./Settings";
 import "./App.css";
 
 type TabId = "today" | "inbox" | "search" | "import" | "review" | "done" | "settings";
+type Theme = "dark" | "light";
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>("today");
   const [inboxCount, setInboxCount] = useState<number>(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem("notas_fup_sidebar_collapsed") === "true";
+  });
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem("notas_fup_theme");
+    if (saved === "light" || saved === "dark") return saved;
+    return "dark"; // Dark mode by default
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("notas_fup_theme", theme);
+  }, [theme]);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("notas_fup_sidebar_collapsed", String(next));
+      return next;
+    });
+  };
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
 
   const refreshInboxCount = async () => {
     try {
@@ -43,6 +69,13 @@ export const App: React.FC = () => {
     });
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Allow Ctrl+B to toggle sidebar anywhere
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
       // Don't trigger tab shortcuts if inside an input or textarea
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") {
@@ -141,10 +174,19 @@ export const App: React.FC = () => {
   return (
     <div className="app-container">
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
         <div className="sidebar-header">
-          <div className="brand-title">Notas FUP</div>
-          <div className="brand-subtitle">Captura e Follow-up</div>
+          <div className="sidebar-brand-box">
+            <div className="brand-title">Notas FUP</div>
+            <div className="brand-subtitle">Captura e Follow-up</div>
+          </div>
+          <button
+            className="sidebar-toggle-btn"
+            onClick={toggleSidebar}
+            title={sidebarCollapsed ? "Expandir barra lateral (Ctrl+B)" : "Recolher barra lateral (Ctrl+B)"}
+          >
+            {sidebarCollapsed ? "»" : "«"}
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -155,10 +197,11 @@ export const App: React.FC = () => {
                 key={item.id}
                 className={`nav-item ${isActive ? "active" : ""}`}
                 onClick={() => setActiveTab(item.id)}
+                title={sidebarCollapsed ? `${item.label} (${item.shortcut})` : undefined}
               >
                 <div className="nav-label">
                   <span className="kbd-badge">{item.shortcut}</span>
-                  <span>{item.label}</span>
+                  <span className="nav-item-text">{item.label}</span>
                 </div>
                 {item.count !== undefined && item.count > 0 && (
                   <span className="nav-badge">{item.count}</span>
@@ -175,7 +218,8 @@ export const App: React.FC = () => {
             onClick={() => openCaptureWindow()}
             title="Abrir captura rápida (Ctrl+Alt+N)"
           >
-            Captura (Ctrl+Alt+N)
+            <span className="sidebar-footer-text">Captura (Ctrl+Alt+N)</span>
+            {sidebarCollapsed && <span>+</span>}
           </button>
         </div>
       </aside>
@@ -188,12 +232,22 @@ export const App: React.FC = () => {
             <p className="page-subtitle">{getPageSubtitle(activeTab)}</p>
           </div>
 
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => openCaptureWindow()}
-          >
-            Nova Nota (Ctrl+Alt+N)
-          </button>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={toggleTheme}
+              title="Alternar entre tema Claro e Escuro"
+            >
+              {theme === "dark" ? "Tema Claro" : "Tema Escuro"}
+            </button>
+
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => openCaptureWindow()}
+            >
+              Nova Nota (Ctrl+Alt+N)
+            </button>
+          </div>
         </header>
 
         {activeTab === "today" && <Today onNavigateToInbox={() => setActiveTab("inbox")} />}
@@ -202,7 +256,7 @@ export const App: React.FC = () => {
         {activeTab === "import" && <Import onImportComplete={() => setActiveTab("today")} />}
         {activeTab === "review" && <Review />}
         {activeTab === "done" && <Done />}
-        {activeTab === "settings" && <Settings />}
+        {activeTab === "settings" && <Settings theme={theme} onThemeChange={setTheme} />}
       </main>
     </div>
   );

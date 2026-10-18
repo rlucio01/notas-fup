@@ -11,6 +11,10 @@ export const Capture: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    // Sync theme with main app preferences
+    const savedTheme = localStorage.getItem("notas_fup_theme") || "dark";
+    document.documentElement.setAttribute("data-theme", savedTheme);
+
     // Focus textarea immediately on mount
     textareaRef.current?.focus();
 

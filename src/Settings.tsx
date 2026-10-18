@@ -2,7 +2,12 @@ import React, { useEffect, useState } from "react";
 import { getContexts, createContext } from "./commands";
 import type { Context, AppConfig } from "./types";
 
-export const Settings: React.FC = () => {
+interface SettingsProps {
+  theme?: "dark" | "light";
+  onThemeChange?: (theme: "dark" | "light") => void;
+}
+
+export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChange }) => {
   const [config, setConfig] = useState<AppConfig>(() => {
     const saved = localStorage.getItem("notas_fup_config");
     if (saved) {
@@ -59,6 +64,40 @@ export const Settings: React.FC = () => {
         <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
           {saveStatus}
         </span>
+      </div>
+
+      {/* Aparência e Tema */}
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Aparência e Tema</span>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px", fontSize: "13px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 500 }}>Tema Visual</div>
+              <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                Escolha entre o tema Escuro de alto contraste ou o tema Claro
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${theme === "dark" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => onThemeChange?.("dark")}
+              >
+                Escuro (Padrão)
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${theme === "light" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => onThemeChange?.("light")}
+              >
+                Claro
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Geral */}
