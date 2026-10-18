@@ -67,23 +67,18 @@ export const WebAuth: React.FC<WebAuthProps> = ({ onAuthenticated }) => {
         }}
       >
         <div style={{ textAlign: "center", marginBottom: "24px" }}>
-          <div
+          <img
+            src="/favicon.png"
+            width="52"
+            height="52"
+            alt="Notas FUP"
             style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "10px",
-              background: "linear-gradient(135deg, #6366f1, #3b82f6)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              borderRadius: "12px",
+              display: "block",
               margin: "0 auto 12px",
-              fontWeight: 700,
-              fontSize: "18px",
-              color: "#ffffff",
+              boxShadow: "0 4px 16px rgba(6, 182, 212, 0.3)",
             }}
-          >
-            FUP
-          </div>
+          />
           <h2 style={{ fontSize: "18px", fontWeight: 600, color: "var(--text-primary)", margin: "0 0 6px" }}>
             Notas FUP
           </h2>

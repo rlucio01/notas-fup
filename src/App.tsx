@@ -260,9 +260,14 @@ export const App: React.FC = () => {
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
         <div className="sidebar-header">
-          <div className="sidebar-brand-box">
-            <div className="brand-title">Notas FUP</div>
-            <div className="brand-subtitle">Captura e Follow-up</div>
+          <div className="sidebar-brand-box" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
+            <img src="/favicon.png" width="24" height="24" alt="Notas FUP Logo" style={{ borderRadius: "5px", flexShrink: 0 }} />
+            {!sidebarCollapsed && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
+                <div className="brand-title">Notas FUP</div>
+                <div className="brand-subtitle">Captura e Follow-up</div>
+              </div>
+            )}
           </div>
           <button
             className="sidebar-toggle-btn"
