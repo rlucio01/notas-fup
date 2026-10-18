@@ -76,6 +76,12 @@ export interface ReviewData {
   stale: Item[];
 }
 
+export interface FollowupAlerts {
+  overdue: Item[];
+  due_today: Item[];
+  due_tomorrow: Item[];
+}
+
 export interface AppConfig {
   shortcut: string;
   autostart: boolean;

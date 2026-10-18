@@ -1,10 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getTodayItems, getInboxItems, updateItem, getContexts, reorderItems } from "./commands";
+import { getTodayItems, getInboxItems, updateItem, getContexts, reorderItems, getFollowupAlerts } from "./commands";
 import { computeTodayBlocks } from "./today-blocks";
 import { EditModal } from "./EditModal";
 import { CalendarIcon, LinkIcon, GripIcon, PaperclipIcon } from "./Icons";
-import type { Item, Context } from "./types";
+import type { Item, Context, FollowupAlerts } from "./types";
 
 interface TodayProps {
   onNavigateToInbox: () => void;
@@ -16,6 +16,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const [contexts, setContexts] = useState<Context[]>([]);
   const [selectedContext, setSelectedContext] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"all" | "executing" | "waiting">("all");
+  const [alerts, setAlerts] = useState<FollowupAlerts | null>(null);
+  const [dismissedAlert, setDismissedAlert] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -26,14 +28,16 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
 
   const loadData = useCallback(async () => {
     try {
-      const [items, inbox, ctxs] = await Promise.all([
+      const [items, inbox, ctxs, fupAlerts] = await Promise.all([
         getTodayItems(),
         getInboxItems(),
         getContexts(),
+        getFollowupAlerts().catch(() => null),
       ]);
       setContexts(ctxs);
       setAllItems(items);
       setInboxCount(inbox.length);
+      if (fupAlerts) setAlerts(fupAlerts);
     } catch (e) {
       console.error("Erro ao carregar demandas:", e);
     } finally {
@@ -398,6 +402,49 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
 
   return (
     <div className="page-body">
+      {/* Banner de Alerta de Follow-up (Vencendo Hoje / Amanhã / Atrasado) */}
+      {!dismissedAlert && alerts && (alerts.due_today.length > 0 || alerts.due_tomorrow.length > 0 || alerts.overdue.length > 0) && (
+        <div className="followup-alert-banner">
+          <div className="alert-banner-content">
+            <span className="alert-banner-badge">Alerta de Follow-up</span>
+            <div className="alert-banner-text">
+              {alerts.due_today.length > 0 && (
+                <span>
+                  <strong>{alerts.due_today.length}</strong> cobrança(s) para <strong>hoje</strong>.{" "}
+                </span>
+              )}
+              {alerts.due_tomorrow.length > 0 && (
+                <span>
+                  <strong>{alerts.due_tomorrow.length}</strong> vence(m) <strong>amanhã</strong> (1 dia antes).{" "}
+                </span>
+              )}
+              {alerts.overdue.length > 0 && (
+                <span style={{ color: "var(--danger)" }}>
+                  (<strong>{alerts.overdue.length}</strong> em atraso)
+                </span>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setViewMode("waiting")}
+            >
+              Ver Cobranças
+            </button>
+            <button
+              type="button"
+              className="alert-banner-close"
+              onClick={() => setDismissedAlert(true)}
+              title="Dispensar aviso por agora"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Abas de Modo de Visão: Em Execução / Aguardando / Geral */}
       <div className="view-mode-tabs">
         <button

@@ -641,6 +641,59 @@ pub fn reorder_items(conn: &Connection, item_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
+// ── Follow-up Alerts ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowupAlerts {
+    pub overdue: Vec<Item>,
+    pub due_today: Vec<Item>,
+    pub due_tomorrow: Vec<Item>,
+}
+
+pub fn get_followup_alerts(conn: &Connection) -> Result<FollowupAlerts> {
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let tomorrow = (Utc::now() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+
+    let sql = format!(
+        "SELECT {ITEM_SELECT_COLS}
+         FROM items i
+         LEFT JOIN contexts c ON i.context_id = c.id
+         WHERE i.deleted_at IS NULL
+           AND i.status = 'waiting'
+           AND i.followup_at IS NOT NULL
+           AND i.followup_at <= ?1
+         ORDER BY i.followup_at ASC, i.position ASC"
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let items: Vec<Item> = stmt
+        .query_map([&tomorrow], map_item_row)?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    let mut overdue = Vec::new();
+    let mut due_today = Vec::new();
+    let mut due_tomorrow = Vec::new();
+
+    for item in items {
+        if let Some(ref d) = item.followup_at {
+            let d_str = &d[..10.min(d.len())];
+            if d_str < &today[..] {
+                overdue.push(item);
+            } else if d_str == &today[..] {
+                due_today.push(item);
+            } else if d_str == &tomorrow[..] {
+                due_tomorrow.push(item);
+            }
+        }
+    }
+
+    Ok(FollowupAlerts {
+        overdue,
+        due_today,
+        due_tomorrow,
+    })
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]

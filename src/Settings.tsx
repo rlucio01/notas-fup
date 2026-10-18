@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getContexts, createContext } from "./commands";
+import { getContexts, createContext, sendTestNotification, triggerFollowupAlerts } from "./commands";
 import ThemeToggle from "./ThemeToggle";
 import type { Context, AppConfig } from "./types";
 
@@ -154,6 +154,53 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
               value={config.stale_days}
               onChange={(e) => updateConfig({ stale_days: parseInt(e.target.value, 10) || 5 })}
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Alertas e Notificações de Follow-Up */}
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Alertas e Notificações de Follow-Up</span>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px", fontSize: "13px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 500 }}>Alertas Nativos do Windows</div>
+              <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                Notificações na área de trabalho tanto 1 dia antes quanto no dia do vencimento da cobrança
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={async () => {
+                  try {
+                    await sendTestNotification();
+                  } catch (e) {
+                    console.error("Erro ao enviar notificação de teste:", e);
+                  }
+                }}
+              >
+                Testar Notificação
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={async () => {
+                  try {
+                    const count = await triggerFollowupAlerts();
+                    alert(`Verificação executada: ${count} notificação(ões) enviada(s).`);
+                  } catch (e) {
+                    console.error("Erro ao verificar follow-ups:", e);
+                  }
+                }}
+              >
+                Verificar Agora
+              </button>
+            </div>
           </div>
         </div>
       </div>

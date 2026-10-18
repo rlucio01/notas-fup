@@ -5,6 +5,7 @@ pub mod db;
 pub mod parser;
 pub mod sync;
 pub mod tray;
+pub mod notifications;
 
 use anyhow::Result;
 use std::sync::Mutex;
@@ -249,6 +250,25 @@ fn save_capture(
 }
 
 #[tauri::command]
+fn get_followup_alerts(
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+) -> Result<String, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let alerts = db::queries::get_followup_alerts(&conn).map_err(|e| e.to_string())?;
+    serde_json::to_string(&alerts).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn trigger_followup_alerts(app: tauri::AppHandle) -> Result<usize, String> {
+    notifications::check_and_send_followup_notifications(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn send_test_notification_cmd(app: tauri::AppHandle) -> Result<(), String> {
+    notifications::send_test_notification(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn open_capture_window_cmd(app: tauri::AppHandle) -> Result<(), String> {
     capture::open_capture_window(app).await
 }
@@ -302,6 +322,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -335,6 +356,9 @@ pub fn run() {
             get_item_attachments,
             delete_attachment,
             reorder_items,
+            get_followup_alerts,
+            trigger_followup_alerts,
+            send_test_notification_cmd,
         ])
         .setup(|app| {
             // 1. Initialize SQLite database
@@ -356,6 +380,18 @@ pub fn run() {
             if let Err(e) = capture::register_global_shortcut(app.handle(), "Ctrl+Alt+N") {
                 eprintln!("Global shortcut registration error: {e}");
             }
+
+            // 4. Background check for follow-up alerts (runs on start and periodically)
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                let _ = notifications::check_and_send_followup_notifications(&app_handle);
+
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(1800)); // Every 30 minutes
+                    let _ = notifications::check_and_send_followup_notifications(&app_handle);
+                }
+            });
 
             Ok(())
         })

@@ -128,3 +128,16 @@ export async function deleteAttachment(id: string, itemId?: string): Promise<voi
 export async function reorderItems(itemIds: string[]): Promise<void> {
   await invoke("reorder_items", { itemIds });
 }
+
+export async function getFollowupAlerts(): Promise<import("./types").FollowupAlerts> {
+  const json = await invoke<string>("get_followup_alerts");
+  return JSON.parse(json);
+}
+
+export async function triggerFollowupAlerts(): Promise<number> {
+  return await invoke<number>("trigger_followup_alerts");
+}
+
+export async function sendTestNotification(): Promise<void> {
+  await invoke("send_test_notification_cmd");
+}
