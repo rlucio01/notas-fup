@@ -13,8 +13,23 @@ export const Review: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const res = await getReviewItems(staleDays);
-      setData(res);
+      const items = await getReviewItems(staleDays);
+      const todayStr = new Date().toISOString().substring(0, 10);
+      const staleThreshold = new Date();
+      staleThreshold.setDate(staleThreshold.getDate() - staleDays);
+      const staleIso = staleThreshold.toISOString();
+
+      const today_entered = items.filter((i) => i.created_at?.substring(0, 10) === todayStr);
+      const due_today = items.filter(
+        (i) =>
+          (i.due_at && i.due_at.substring(0, 10) <= todayStr && i.status !== "done") ||
+          (i.followup_at && i.followup_at.substring(0, 10) <= todayStr && i.status !== "done")
+      );
+      const stale = items.filter(
+        (i) => i.updated_at < staleIso && i.status !== "done" && i.status !== "inbox"
+      );
+
+      setData({ today_entered, due_today, stale });
     } catch (e) {
       console.error("Erro ao carregar revisão do dia:", e);
     } finally {

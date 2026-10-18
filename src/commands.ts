@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Context, Item, ProposedItem, TodayBlocks, ReviewData } from "./types";
+import type { Context, Item, ProposedItem } from "./types";
 
-export async function getTodayItems(): Promise<TodayBlocks> {
+export async function getTodayItems(): Promise<Item[]> {
   const json = await invoke<string>("get_today_items");
   return JSON.parse(json);
 }
@@ -16,7 +16,7 @@ export async function getDoneItems(): Promise<Item[]> {
   return JSON.parse(json);
 }
 
-export async function getReviewItems(staleDays: number = 5): Promise<ReviewData> {
+export async function getReviewItems(staleDays: number = 5): Promise<Item[]> {
   const json = await invoke<string>("get_review_items", { staleDays });
   return JSON.parse(json);
 }

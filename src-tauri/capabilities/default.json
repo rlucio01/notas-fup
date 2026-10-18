@@ -5,6 +5,7 @@
   "windows": ["main", "capture"],
   "permissions": [
     "core:default",
+    "core:event:default",
     "opener:default",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",

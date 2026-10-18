@@ -14,7 +14,7 @@ pub fn open_capture_window(app: &AppHandle) -> Result<(), String> {
     WebviewWindowBuilder::new(
         app,
         "capture",
-        WebviewUrl::App("index.html?w=capture".into()),
+        WebviewUrl::default(),
     )
     .title("Captura Rápida")
     .inner_size(640.0, 200.0)
@@ -24,6 +24,7 @@ pub fn open_capture_window(app: &AppHandle) -> Result<(), String> {
     .resizable(false)
     .skip_taskbar(true)
     .shadow(true)
+    .devtools(cfg!(debug_assertions))
     .build()
     .map_err(|e| e.to_string())?;
 
@@ -48,7 +49,7 @@ pub fn open_main_window(app: &AppHandle) -> Result<(), String> {
     WebviewWindowBuilder::new(
         app,
         "main",
-        WebviewUrl::App("index.html".into()),
+        WebviewUrl::default(),
     )
     .title("Notas FUP")
     .inner_size(980.0, 700.0)
@@ -56,6 +57,7 @@ pub fn open_main_window(app: &AppHandle) -> Result<(), String> {
     .decorations(true)
     .center()
     .resizable(true)
+    .devtools(cfg!(debug_assertions))
     .build()
     .map_err(|e| e.to_string())?;
 

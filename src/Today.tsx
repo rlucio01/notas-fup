@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getTodayItems, updateItem } from "./commands";
+import { getTodayItems, getInboxItems, updateItem } from "./commands";
+import { computeTodayBlocks } from "./today-blocks";
 import type { Item, TodayBlocks } from "./types";
 
 interface TodayProps {
@@ -18,8 +19,11 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
 
   const loadData = useCallback(async () => {
     try {
-      const data = await getTodayItems();
-      setBlocks(data);
+      const [items, inbox] = await Promise.all([getTodayItems(), getInboxItems()]);
+      const todayStr = new Date().toISOString().substring(0, 10);
+      const computed = computeTodayBlocks(items, todayStr);
+      computed.inbox_count = inbox.length;
+      setBlocks(computed);
     } catch (e) {
       console.error("Erro ao carregar itens de hoje:", e);
     } finally {
