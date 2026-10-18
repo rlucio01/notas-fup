@@ -34,7 +34,7 @@ export const GripIcon: React.FC<IconProps> = ({ size = 14, className = "" }) => 
     strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
-    style={{ flexShrink: 0 }}
+    style={{ flexShrink: 0, pointerEvents: "none", userSelect: "none" }}
   >
     <circle cx="9" cy="6" r="1" fill="currentColor" />
     <circle cx="15" cy="6" r="1" fill="currentColor" />

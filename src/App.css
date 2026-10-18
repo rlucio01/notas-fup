@@ -480,11 +480,13 @@ body, html, #root {
   justify-content: center;
   color: var(--text-muted);
   cursor: grab;
-  padding: 4px 2px;
+  padding: 4px 5px;
   border-radius: 4px;
-  margin-right: -4px;
+  margin-right: -2px;
   transition: color 0.15s ease, background 0.15s ease;
   user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .drag-handle:hover {

@@ -167,8 +167,22 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     loadData();
   };
 
-  const handleDrop = async (targetId: string, section: "executing" | "today" | "overdue") => {
-    if (!draggedId || draggedId === targetId || dragSection !== section) return;
+  const handleDrop = async (
+    targetId: string,
+    section: "executing" | "today" | "overdue",
+    e?: React.DragEvent
+  ) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const sourceId = e?.dataTransfer?.getData("text/plain") || draggedId;
+    if (!sourceId || sourceId === targetId || (dragSection && dragSection !== section)) {
+      setDraggedId(null);
+      setDragOverId(null);
+      setDragSection(null);
+      return;
+    }
 
     let list: Item[] = [];
     if (section === "executing") {
@@ -179,16 +193,48 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
       list = [...blocks.overdue];
     }
 
-    const fromIdx = list.findIndex((i) => i.id === draggedId);
+    const fromIdx = list.findIndex((i) => i.id === sourceId);
     const toIdx = list.findIndex((i) => i.id === targetId);
-    if (fromIdx >= 0 && toIdx >= 0) {
+    if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx) {
       const [moved] = list.splice(fromIdx, 1);
       list.splice(toIdx, 0, moved);
+
+      // Instant optimistic UI update
+      const newOrderIds = list.map((i) => i.id);
+
+      setAllItems((prev) => {
+        const others = prev.filter((i) => !newOrderIds.includes(i.id));
+        const reordered = newOrderIds
+          .map((id) => prev.find((i) => i.id === id)!)
+          .filter(Boolean);
+
+        if (section === "executing") {
+          return [...reordered, ...others];
+        } else {
+          return prev.map((item) => {
+            const idx = newOrderIds.indexOf(item.id);
+            return idx >= 0 ? list[idx] : item;
+          });
+        }
+      });
+
+      // Synchronize all open items to prevent position collisions in SQLite
+      const allOpen = allItems.filter((i) => i.status === "open");
+      const fromInAll = allOpen.findIndex((i) => i.id === sourceId);
+      const toInAll = allOpen.findIndex((i) => i.id === targetId);
+      let idsToPersist = newOrderIds;
+      if (fromInAll >= 0 && toInAll >= 0 && section === "executing") {
+        const [movedOpen] = allOpen.splice(fromInAll, 1);
+        allOpen.splice(toInAll, 0, movedOpen);
+        idsToPersist = allOpen.map((i) => i.id);
+      }
+
       try {
-        await reorderItems(list.map((i) => i.id));
-        loadData();
+        await reorderItems(idsToPersist);
       } catch (err) {
-        console.error("Erro ao reordenar tarefas:", err);
+        console.error("Erro ao reordenar tarefas no banco:", err);
+      } finally {
+        loadData();
       }
     }
 
@@ -216,26 +262,41 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           isDragOver ? "drag-over-top" : ""
         }`}
         draggable={isDraggable}
-        onDragStart={() => {
-          if (isDraggable) {
-            setDraggedId(item.id);
-            setDragSection(section || null);
-          }
+        onDragStart={(e) => {
+          if (!isDraggable) return;
+          e.dataTransfer.setData("text/plain", item.id);
+          e.dataTransfer.setData("application/x-fup-id", item.id);
+          e.dataTransfer.effectAllowed = "move";
+          setDraggedId(item.id);
+          setDragSection(section || null);
         }}
         onDragOver={(e) => {
-          if (isDraggable && draggedId && draggedId !== item.id) {
-            e.preventDefault();
+          if (!isDraggable) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (draggedId && draggedId !== item.id && dragOverId !== item.id) {
             setDragOverId(item.id);
           }
         }}
-        onDragLeave={() => {
-          if (dragOverId === item.id) {
-            setDragOverId(null);
+        onDragEnter={(e) => {
+          if (!isDraggable) return;
+          e.preventDefault();
+          if (draggedId && draggedId !== item.id) {
+            setDragOverId(item.id);
           }
         }}
-        onDrop={() => {
+        onDragLeave={(e) => {
+          if (e.currentTarget && !e.currentTarget.contains(e.relatedTarget as Node)) {
+            if (dragOverId === item.id) {
+              setDragOverId(null);
+            }
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
           if (isDraggable && section) {
-            handleDrop(item.id, section);
+            handleDrop(item.id, section, e);
           }
         }}
         onDragEnd={() => {
@@ -248,6 +309,15 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           <span
             className="drag-handle"
             title="Arraste para definir a ordem de prioridade"
+            draggable={isDraggable}
+            onDragStart={(e) => {
+              e.stopPropagation();
+              e.dataTransfer.setData("text/plain", item.id);
+              e.dataTransfer.setData("application/x-fup-id", item.id);
+              e.dataTransfer.effectAllowed = "move";
+              setDraggedId(item.id);
+              setDragSection(section || null);
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <GripIcon size={14} />

@@ -37,12 +37,21 @@ export const Inbox: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  const handleDrop = async (targetId: string) => {
-    if (!draggedId || draggedId === targetId) return;
+  const handleDrop = async (targetId: string, e?: React.DragEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const sourceId = e?.dataTransfer?.getData("text/plain") || draggedId;
+    if (!sourceId || sourceId === targetId) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
     const list = [...items];
-    const fromIdx = list.findIndex((i) => i.id === draggedId);
+    const fromIdx = list.findIndex((i) => i.id === sourceId);
     const toIdx = list.findIndex((i) => i.id === targetId);
-    if (fromIdx >= 0 && toIdx >= 0) {
+    if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx) {
       const [moved] = list.splice(fromIdx, 1);
       list.splice(toIdx, 0, moved);
       setItems(list);
@@ -219,20 +228,27 @@ export const Inbox: React.FC = () => {
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
+                  if (draggedId && draggedId !== item.id && dragOverId !== item.id) {
+                    setDragOverId(item.id);
+                  }
                 }}
-                onDragEnter={() => {
+                onDragEnter={(e) => {
+                  e.preventDefault();
                   if (draggedId && draggedId !== item.id) {
                     setDragOverId(item.id);
                   }
                 }}
-                onDragLeave={() => {
-                  if (dragOverId === item.id) {
-                    setDragOverId(null);
+                onDragLeave={(e) => {
+                  if (e.currentTarget && !e.currentTarget.contains(e.relatedTarget as Node)) {
+                    if (dragOverId === item.id) {
+                      setDragOverId(null);
+                    }
                   }
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
-                  handleDrop(item.id);
+                  e.stopPropagation();
+                  handleDrop(item.id, e);
                 }}
                 onDragEnd={() => {
                   setDraggedId(null);
@@ -242,6 +258,13 @@ export const Inbox: React.FC = () => {
                 <span
                   className="drag-handle"
                   title="Arraste para priorizar no Inbox"
+                  draggable={true}
+                  onDragStart={(e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.setData("text/plain", item.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    setDraggedId(item.id);
+                  }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <GripIcon size={14} />
