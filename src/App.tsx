@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getInboxItems, openCaptureWindow, getContexts, createItem } from "./commands";
 import { isTauri, getCloudConfig, syncWithCloud } from "./cloud-sync";
@@ -44,37 +44,40 @@ export const App: React.FC = () => {
   }, [theme]);
 
   // ── Two-way Cloudflare Sync (Desktop <-> Cloudflare D1) ─────────────────
+  const syncTimeoutRef = useRef<any>(null);
+  const triggerDebouncedSync = useCallback((delay = 2000) => {
+    if (!isTauri()) return;
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      syncWithCloud().catch(console.error);
+    }, delay);
+  }, []);
+
   useEffect(() => {
     if (!isTauri()) return;
 
-    let syncTimer: any = null;
-    const triggerDebouncedSync = () => {
-      if (syncTimer) clearTimeout(syncTimer);
-      syncTimer = setTimeout(() => {
-        syncWithCloud().catch(console.error);
-      }, 1000);
-    };
-
-    // 1. Initial sync on launch
-    triggerDebouncedSync();
+    // 1. Initial sync on launch (immediate after mount)
+    triggerDebouncedSync(800);
 
     // 2. Sync whenever desktop window gains focus (e.g. user returns to PC)
     const handleFocus = () => {
-      triggerDebouncedSync();
+      triggerDebouncedSync(1000);
     };
     window.addEventListener("focus", handleFocus);
 
-    // 3. Periodic sync every 30 seconds
+    // 3. Periodic pull every 60 seconds (only if document is active/visible)
     const interval = setInterval(() => {
-      syncWithCloud().catch(console.error);
-    }, 30 * 1000);
+      if (document.visibilityState === "visible") {
+        syncWithCloud().catch(console.error);
+      }
+    }, 60 * 1000);
 
     return () => {
-      if (syncTimer) clearTimeout(syncTimer);
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
       clearInterval(interval);
       window.removeEventListener("focus", handleFocus);
     };
-  }, []);
+  }, [triggerDebouncedSync]);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => {
@@ -108,7 +111,7 @@ export const App: React.FC = () => {
     if (isTauri()) {
       listen("item-created", () => {
         refreshInboxCount();
-        syncWithCloud().catch(console.error);
+        triggerDebouncedSync(2000);
       }).then((un) => {
         unlistenCreated = un;
       });
@@ -117,7 +120,7 @@ export const App: React.FC = () => {
         refreshInboxCount();
         // If the update originated locally on desktop (not from remote-sync), push to cloud
         if (event.payload !== "remote-sync") {
-          syncWithCloud().catch(console.error);
+          triggerDebouncedSync(2000);
         }
       }).then((un) => {
         unlistenUpdated = un;
@@ -125,7 +128,7 @@ export const App: React.FC = () => {
 
       listen("items-imported", () => {
         refreshInboxCount();
-        syncWithCloud().catch(console.error);
+        triggerDebouncedSync(2000);
       }).then((un) => {
         unlistenImported = un;
       });

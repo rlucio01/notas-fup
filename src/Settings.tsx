@@ -123,13 +123,17 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
     }
   };
 
-  const handleManualSync = async () => {
+  const handleManualSync = async (forceFull = false) => {
     setSyncing(true);
-    setSyncMsg("Sincronizando com Cloudflare D1...");
+    setSyncMsg(forceFull ? "Enviando banco completo para Cloudflare D1..." : "Sincronizando com Cloudflare D1...");
     try {
-      const result = await syncWithCloud(cloudConfig);
+      const result = await syncWithCloud({ customConfig: cloudConfig, forceFull });
       if (result.success) {
-        setSyncMsg(`Sincronizado com sucesso! (${result.pushed} enviados, ${result.pulled} recebidos)`);
+        if (result.skippedPush && result.pulled === 0) {
+          setSyncMsg("Tudo atualizado! (Nenhuma alteração pendente)");
+        } else {
+          setSyncMsg(`Sincronizado com sucesso! (${result.pushed} enviados, ${result.pulled} recebidos)`);
+        }
         setCloudConfig(getCloudConfig());
       } else {
         setSyncMsg(`Erro: ${result.error || "Falha na sincronização"}`);
@@ -613,11 +617,22 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               <button
                 className="btn btn-primary btn-sm"
-                onClick={handleManualSync}
+                onClick={() => handleManualSync(false)}
                 disabled={syncing}
               >
                 {syncing ? "Sincronizando..." : "Sincronizar Agora"}
               </button>
+
+              {isTauri() && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => handleManualSync(true)}
+                  disabled={syncing}
+                  title="Envia todos os itens e contextos locais para a nuvem sem filtro delta"
+                >
+                  Forçar Envio Completo
+                </button>
+              )}
 
               {!isTauri() && (
                 <button

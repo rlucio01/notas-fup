@@ -76,59 +76,63 @@ export const Done: React.FC = () => {
         <div className="item-list">
           {filteredItems.map((item) => (
             <div key={item.id} className="item-row">
-              <input
-                type="checkbox"
-                className="item-checkbox"
-                checked={true}
-                onChange={() => handleReopen(item)}
-                title="Desmarcar para reabrir"
-              />
+              <div className="item-row-top">
+                <input
+                  type="checkbox"
+                  className="item-checkbox"
+                  checked={true}
+                  onChange={() => handleReopen(item)}
+                  title="Desmarcar para reabrir"
+                />
 
-              <div
-                className="item-main"
-                style={{ cursor: "pointer" }}
-                onClick={() => setEditingItem(item)}
-                title="Clique para editar ou reclassificar"
-              >
-                <div className="item-title-line">
-                  <span className="item-title done">{item.title}</span>
+                <div
+                  className="item-main"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setEditingItem(item)}
+                  title="Clique para editar ou reclassificar"
+                >
+                  <div className="item-title-row">
+                    <span className="item-title done">{item.title}</span>
+                  </div>
 
-                  {item.context_name && (
-                    <span className="badge badge-context">
-                      @{item.context_name}
-                    </span>
-                  )}
+                  <div className="item-badges-row">
+                    {item.context_name && (
+                      <span className="badge badge-context">
+                        @{item.context_name}
+                      </span>
+                    )}
 
-                  {item.ticket_ref && (
-                    <span className="badge badge-ticket">
-                      {item.ticket_ref}
-                    </span>
-                  )}
+                    {item.ticket_ref && (
+                      <span className="badge badge-ticket">
+                        {item.ticket_ref}
+                      </span>
+                    )}
 
-                  {item.done_at && (
-                    <span className="badge badge-today">
-                      Concluído em: {item.done_at.substring(0, 10)}
-                    </span>
-                  )}
+                    {item.done_at && (
+                      <span className="badge badge-today">
+                        Concluído em: {item.done_at.substring(0, 10)}
+                      </span>
+                    )}
 
-                  {item.tags?.map((t) => (
-                    <span key={t} className="badge badge-tag">
-                      #{t}
-                    </span>
-                  ))}
+                    {item.tags?.map((t) => (
+                      <span key={t} className="badge badge-tag">
+                        #{t}
+                      </span>
+                    ))}
 
-                  {item.attachment_count !== undefined && item.attachment_count > 0 && (
-                    <span
-                      className="badge badge-attachment"
-                      title={`${item.attachment_count} anexo(s)`}
-                    >
-                      <PaperclipIcon size={11} />
-                      {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
-                    </span>
-                  )}
+                    {item.attachment_count !== undefined && item.attachment_count > 0 && (
+                      <span
+                        className="badge badge-attachment"
+                        title={`${item.attachment_count} anexo(s)`}
+                      >
+                        <PaperclipIcon size={11} />
+                        {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
+                      </span>
+                    )}
+                  </div>
+
+                  {item.body && <div className="item-body">{item.body}</div>}
                 </div>
-
-                {item.body && <div className="item-body">{item.body}</div>}
               </div>
 
               <div className="item-actions">

@@ -559,12 +559,42 @@ body, html, #root {
   accent-color: var(--accent);
 }
 
+.item-row-top {
+  display: contents;
+}
+
 .item-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.item-badges-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.card-subtitle {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.drag-tip-mobile {
+  display: none;
 }
 
 .item-title-line {
@@ -1904,26 +1934,69 @@ body, html, #root {
   }
 
   .item-list {
-    gap: 6px !important;
+    gap: 8px !important;
   }
 
   .item-row {
-    padding: 10px 10px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 12px !important;
     gap: 8px !important;
-    align-items: flex-start !important;
     touch-action: pan-y !important;
-    flex-wrap: wrap !important;
+    background: var(--bg-card) !important;
+    border-radius: 8px !important;
+    border: 1px solid var(--border-color) !important;
   }
 
+  /* Ocultar drag handle no mobile já que usamos as setas para ordenação */
   .drag-handle {
-    padding: 2px 3px !important;
-    margin-right: -4px !important;
+    display: none !important;
+  }
+
+  .drag-tip-desktop {
+    display: none !important;
+  }
+
+  .drag-tip-mobile {
+    display: inline !important;
+  }
+
+  .item-row-top {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+
+  .item-checkbox {
+    width: 18px !important;
+    height: 18px !important;
+    margin-top: 2px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .item-main {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+
+  .item-title-row {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    width: 100% !important;
   }
 
   .priority-badge-group {
     display: inline-flex !important;
     align-items: center !important;
     gap: 3px !important;
+    flex-shrink: 0 !important;
+    margin-top: 1px !important;
   }
 
   .priority-nudge-arrows {
@@ -1932,8 +2005,8 @@ body, html, #root {
   }
 
   .btn-priority-nudge {
-    width: 20px !important;
-    height: 16px !important;
+    width: 22px !important;
+    height: 18px !important;
     background: var(--bg-hover) !important;
     border-radius: 3px !important;
     display: inline-flex !important;
@@ -1941,43 +2014,57 @@ body, html, #root {
     justify-content: center !important;
   }
 
-  .item-main {
-    min-width: 0 !important;
-    flex: 1 1 70% !important;
-  }
-
-  .item-title-line {
-    gap: 6px !important;
-  }
-
   .item-title {
+    flex: 1 !important;
+    min-width: 0 !important;
     font-size: 13.5px !important;
+    font-weight: 500 !important;
     line-height: 1.35 !important;
+    word-break: break-word !important;
+  }
+
+  .item-badges-row {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-top: 2px !important;
   }
 
   .badge {
     font-size: 10.5px !important;
-    padding: 1px 5px !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
   }
 
   .item-body {
     font-size: 11.5px !important;
     line-height: 1.4 !important;
+    margin-top: 4px !important;
+    padding: 6px 8px !important;
+    background: var(--bg-hover) !important;
+    border-radius: 4px !important;
+    border-left: 2px solid var(--accent) !important;
   }
 
   .item-actions {
     width: 100% !important;
     display: flex !important;
     justify-content: flex-end !important;
+    align-items: center !important;
     gap: 6px !important;
     opacity: 1 !important;
-    margin-top: 6px !important;
+    margin-top: 4px !important;
+    padding-top: 8px !important;
+    border-top: 1px solid var(--border-color) !important;
     flex-wrap: wrap !important;
   }
 
   .item-actions .btn {
-    padding: 4px 8px !important;
+    padding: 5px 10px !important;
     font-size: 11.5px !important;
+    border-radius: 5px !important;
+    min-height: 28px !important;
   }
 
   .shortcut-bar {

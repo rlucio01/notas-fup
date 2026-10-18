@@ -227,6 +227,33 @@ fn sync_remote_items_cmd(
 }
 
 #[tauri::command]
+fn sync_remote_contexts_cmd(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    contexts_json: String,
+) -> Result<usize, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let contexts: Vec<db::queries::Context> =
+        serde_json::from_str(&contexts_json).map_err(|e| e.to_string())?;
+    let count = db::queries::upsert_remote_contexts(&conn, &contexts).map_err(|e| e.to_string())?;
+    if count > 0 {
+        let _ = app.emit("contexts-updated", "remote-sync");
+    }
+    Ok(count)
+}
+
+#[tauri::command]
+fn get_sync_data_cmd(
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    since: Option<String>,
+) -> Result<String, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let bundle = db::queries::get_modified_sync_data(&conn, since.as_deref())
+        .map_err(|e| e.to_string())?;
+    serde_json::to_string(&bundle).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn save_capture(
     app: tauri::AppHandle,
     state: tauri::State<'_, Mutex<rusqlite::Connection>>,
@@ -443,6 +470,8 @@ pub fn run() {
             trigger_followup_alerts,
             send_test_notification_cmd,
             sync_remote_items_cmd,
+            sync_remote_contexts_cmd,
+            get_sync_data_cmd,
             download_and_install_update,
         ])
         .setup(|app| {

@@ -45,12 +45,36 @@ export function saveCloudConfig(config: CloudConfig): void {
 
 
 
+export interface SyncOptions {
+  customConfig?: CloudConfig;
+  forceFull?: boolean;
+}
+
+export interface SyncResult {
+  success: boolean;
+  pushed: number;
+  pulled: number;
+  skippedPush?: boolean;
+  error?: string;
+}
+
 // ── Cloudflare Sync Engine (Local SQLite <-> Cloudflare D1) ─────────────
 
 export async function syncWithCloud(
-  customConfig?: CloudConfig
-): Promise<{ success: boolean; pushed: number; pulled: number; error?: string }> {
-  const config = customConfig || getCloudConfig();
+  optionsOrConfig?: SyncOptions | CloudConfig
+): Promise<SyncResult> {
+  let config: CloudConfig;
+  let forceFull = false;
+
+  if (optionsOrConfig && "enabled" in optionsOrConfig) {
+    config = optionsOrConfig;
+  } else if (optionsOrConfig) {
+    config = optionsOrConfig.customConfig || getCloudConfig();
+    forceFull = Boolean(optionsOrConfig.forceFull);
+  } else {
+    config = getCloudConfig();
+  }
+
   if (!config.enabled || !config.url || !config.secret) {
     return { success: false, pushed: 0, pulled: 0, error: "Sincronização desativada ou incompleta" };
   }
@@ -58,53 +82,45 @@ export async function syncWithCloud(
   const baseUrl = config.url.replace(/\/+$/, "");
 
   try {
-    // 1. Get all local items and contexts from local SQLite
     let localItems: Item[] = [];
     let localContexts: Context[] = [];
 
+    // 1. Get ONLY modified local data (Delta-Sync)
     if (isTauri()) {
-      const [itemsJson, contextsJson] = await Promise.all([
-        invoke<string>("get_today_items"),
-        invoke<string>("get_contexts"),
-      ]);
-      const [inboxJson, doneJson] = await Promise.all([
-        invoke<string>("get_inbox_items"),
-        invoke<string>("get_done_items"),
-      ]);
-
-      const activeToday: Item[] = JSON.parse(itemsJson);
-      const inboxItems: Item[] = JSON.parse(inboxJson);
-      const doneItems: Item[] = JSON.parse(doneJson);
-      localContexts = JSON.parse(contextsJson);
-
-      // Deduplicate all local items
-      const itemMap = new Map<string, Item>();
-      for (const item of [...activeToday, ...inboxItems, ...doneItems]) {
-        itemMap.set(item.id, item);
-      }
-      localItems = Array.from(itemMap.values());
+      const sinceParam = forceFull ? null : (config.lastSyncAt || null);
+      const dataJson = await invoke<string>("get_sync_data_cmd", { since: sinceParam });
+      const bundle: { items: Item[]; contexts: Context[] } = JSON.parse(dataJson);
+      localItems = bundle.items || [];
+      localContexts = bundle.contexts || [];
     }
 
-    // 2. Push local data to Cloudflare D1
-    const pushRes = await fetch(`${baseUrl}/api/sync`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.secret}`,
-      },
-      body: JSON.stringify({
-        items: localItems,
-        contexts: localContexts,
-      }),
-    });
+    let pushedCount = 0;
+    const hasLocalChanges = localItems.length > 0 || localContexts.length > 0;
 
-    if (!pushRes.ok) {
-      const err = await pushRes.text();
-      throw new Error(`Erro ao enviar dados para a Cloudflare (${pushRes.status}): ${err}`);
+    // 2. ONLY push to Cloudflare D1 if there are actually local changes!
+    // This saves 99.9% of D1 row writes per day and prevents hitting the 100,000 quota.
+    if (hasLocalChanges) {
+      const pushRes = await fetch(`${baseUrl}/api/sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.secret}`,
+        },
+        body: JSON.stringify({
+          items: localItems,
+          contexts: localContexts,
+        }),
+      });
+
+      if (!pushRes.ok) {
+        const err = await pushRes.text();
+        throw new Error(`Erro ao enviar dados para a Cloudflare (${pushRes.status}): ${err}`);
+      }
+      pushedCount = localItems.length + localContexts.length;
     }
 
     // 3. Pull updates from Cloudflare D1 (since last sync or full)
-    const sinceParam = config.lastSyncAt ? encodeURIComponent(config.lastSyncAt) : "";
+    const sinceParam = forceFull ? "" : (config.lastSyncAt ? encodeURIComponent(config.lastSyncAt) : "");
     const pullRes = await fetch(`${baseUrl}/api/sync?since=${sinceParam}`, {
       method: "GET",
       headers: {
@@ -118,12 +134,19 @@ export async function syncWithCloud(
 
     const pullData: { server_time: string; items: Item[]; contexts: Context[] } = await pullRes.json();
 
-    // 4. If in Tauri, apply cloud items to local SQLite via atomic ON CONFLICT upsert
+    // 4. If in Tauri, apply cloud items & contexts to local SQLite
     let pulledCount = 0;
-    if (isTauri() && pullData.items && pullData.items.length > 0) {
-      pulledCount = await invoke<number>("sync_remote_items_cmd", {
-        itemsJson: JSON.stringify(pullData.items),
-      });
+    if (isTauri()) {
+      if (pullData.items && pullData.items.length > 0) {
+        pulledCount += await invoke<number>("sync_remote_items_cmd", {
+          itemsJson: JSON.stringify(pullData.items),
+        });
+      }
+      if (pullData.contexts && pullData.contexts.length > 0) {
+        await invoke<number>("sync_remote_contexts_cmd", {
+          contextsJson: JSON.stringify(pullData.contexts),
+        });
+      }
     }
 
     // 5. Update last sync timestamp
@@ -132,8 +155,9 @@ export async function syncWithCloud(
 
     return {
       success: true,
-      pushed: localItems.length,
+      pushed: pushedCount,
       pulled: pulledCount,
+      skippedPush: !hasLocalChanges,
     };
   } catch (err: any) {
     console.error("Falha na sincronização Cloudflare:", err);

@@ -411,6 +411,119 @@ pub fn upsert_remote_items(conn: &Connection, items: &[Item]) -> Result<usize> {
     Ok(updated)
 }
 
+pub fn upsert_remote_contexts(conn: &Connection, contexts: &[Context]) -> Result<usize> {
+    let mut updated = 0;
+    for ctx in contexts {
+        let rows = conn.execute(
+            "INSERT INTO contexts (
+                id, name, color, sync_enabled, archived, created_at, updated_at, deleted_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                color = excluded.color,
+                sync_enabled = excluded.sync_enabled,
+                archived = excluded.archived,
+                updated_at = excluded.updated_at,
+                deleted_at = excluded.deleted_at
+             WHERE excluded.updated_at >= contexts.updated_at",
+            params![
+                &ctx.id,
+                &ctx.name,
+                &ctx.color,
+                if ctx.sync_enabled { 1 } else { 0 },
+                if ctx.archived { 1 } else { 0 },
+                &ctx.created_at,
+                &ctx.updated_at,
+                &ctx.deleted_at,
+            ],
+        )?;
+        if rows > 0 {
+            updated += 1;
+        }
+    }
+    Ok(updated)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncBundle {
+    pub items: Vec<Item>,
+    pub contexts: Vec<Context>,
+}
+
+pub fn get_modified_sync_data(conn: &Connection, since: Option<&str>) -> Result<SyncBundle> {
+    let since_str = since.map(str::trim).filter(|s| !s.is_empty());
+
+    let items = if let Some(s) = since_str {
+        let sql = format!(
+            "SELECT {ITEM_SELECT_COLS}
+             FROM items i
+             LEFT JOIN contexts c ON i.context_id = c.id
+             WHERE i.updated_at > ?1
+             ORDER BY i.updated_at ASC"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([s], map_item_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        rows
+    } else {
+        let sql = format!(
+            "SELECT {ITEM_SELECT_COLS}
+             FROM items i
+             LEFT JOIN contexts c ON i.context_id = c.id
+             ORDER BY i.updated_at ASC"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], map_item_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        rows
+    };
+
+    let contexts = if let Some(s) = since_str {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, color, sync_enabled, archived, created_at, updated_at, deleted_at
+             FROM contexts
+             WHERE updated_at > ?1
+             ORDER BY updated_at ASC",
+        )?;
+        let rows = stmt.query_map([s], |row| {
+            Ok(Context {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                color: row.get(2)?,
+                sync_enabled: row.get(3)?,
+                archived: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                deleted_at: row.get(7)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        rows
+    } else {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, color, sync_enabled, archived, created_at, updated_at, deleted_at
+             FROM contexts
+             ORDER BY updated_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Context {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                color: row.get(2)?,
+                sync_enabled: row.get(3)?,
+                archived: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+                deleted_at: row.get(7)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+        rows
+    };
+
+    Ok(SyncBundle { items, contexts })
+}
+
 fn ensure_tag(conn: &Connection, name: &str) -> Result<()> {
     let exists: bool = conn.query_row(
         "SELECT COUNT(*) > 0 FROM tags WHERE name = ?1",
@@ -1129,5 +1242,58 @@ mod tests {
         let done = get_done_items(&conn).unwrap();
         assert_eq!(done.len(), 1);
         assert_eq!(done[0].status, "done");
+    }
+
+    #[test]
+    fn test_modified_sync_data_and_upsert_contexts() {
+        let conn = setup();
+        let ctx = create_context(&conn, "Trabalho", "#6366f1").unwrap();
+        let new_item = NewItem {
+            title: "Item de teste".to_string(),
+            body: None,
+            context_id: Some(ctx.id.clone()),
+            kind: "task".to_string(),
+            status: "open".to_string(),
+            waiting_on: None,
+            followup_at: None,
+            due_at: None,
+            ticket_ref: None,
+            url: None,
+            source: "manual".to_string(),
+            origin_app: None,
+            tags: vec![],
+        };
+        insert_item(&conn, &new_item).unwrap();
+
+        // 1. Full sync (since: None)
+        let full = get_modified_sync_data(&conn, None).unwrap();
+        assert_eq!(full.items.len(), 1);
+        assert_eq!(full.contexts.len(), 1);
+
+        // 2. Delta sync with past timestamp
+        let delta_old = get_modified_sync_data(&conn, Some("1970-01-01T00:00:00Z")).unwrap();
+        assert_eq!(delta_old.items.len(), 1);
+        assert_eq!(delta_old.contexts.len(), 1);
+
+        // 3. Delta sync with future timestamp
+        let delta_future = get_modified_sync_data(&conn, Some("2999-01-01T00:00:00Z")).unwrap();
+        assert_eq!(delta_future.items.len(), 0);
+        assert_eq!(delta_future.contexts.len(), 0);
+
+        // 4. Remote contexts upsert
+        let remote_ctx = Context {
+            id: "remote-ctx-1".to_string(),
+            name: "Nuvem".to_string(),
+            color: "#10b981".to_string(),
+            sync_enabled: true,
+            archived: false,
+            created_at: "2026-10-18T20:00:00Z".to_string(),
+            updated_at: "2026-10-18T20:00:00Z".to_string(),
+            deleted_at: None,
+        };
+        let count = upsert_remote_contexts(&conn, &[remote_ctx]).unwrap();
+        assert_eq!(count, 1);
+        let ctx_list = get_contexts(&conn).unwrap();
+        assert_eq!(ctx_list.len(), 2);
     }
 }

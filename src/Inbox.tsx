@@ -294,58 +294,71 @@ export const Inbox: React.FC = () => {
                   <GripIcon size={14} />
                 </span>
 
-                <input
-                  type="checkbox"
-                  className="item-checkbox"
-                  checked={false}
-                  onChange={async () => {
-                    await updateItem({ id: item.id, status: "done" });
-                    loadData();
-                  }}
-                  title="Concluir item (X)"
-                />
+                <div className="item-row-top">
+                  <input
+                    type="checkbox"
+                    className="item-checkbox"
+                    checked={false}
+                    onChange={async () => {
+                      await updateItem({ id: item.id, status: "done" });
+                      loadData();
+                    }}
+                    title="Concluir item (X)"
+                  />
 
-                <div
-                  className="item-main"
-                  style={{ cursor: "pointer" }}
-                  onClick={() => setEditingItem(item)}
-                  title="Clique para editar ou reclassificar (E)"
-                >
-                  <div className="item-title-line">
-                    <span className="item-title">{item.title}</span>
+                  <div
+                    className="item-main"
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setEditingItem(item)}
+                    title="Clique para editar ou reclassificar (E)"
+                  >
+                    <div className="item-title-row">
+                      <span className="item-title">{item.title}</span>
+                    </div>
 
-                    {item.ticket_ref && (
-                      <span className="badge badge-ticket">{item.ticket_ref}</span>
+                    {Boolean(
+                      item.ticket_ref ||
+                        item.waiting_on ||
+                        item.due_at ||
+                        item.followup_at ||
+                        (item.tags && item.tags.length > 0) ||
+                        (item.attachment_count !== undefined && item.attachment_count > 0)
+                    ) && (
+                      <div className="item-badges-row">
+                        {item.ticket_ref && (
+                          <span className="badge badge-ticket">{item.ticket_ref}</span>
+                        )}
+
+                        {item.waiting_on && (
+                          <span className="badge badge-waiting">~{item.waiting_on}</span>
+                        )}
+
+                        {(item.due_at || item.followup_at) && (
+                          <span className="badge badge-today">
+                            {(item.due_at || item.followup_at)?.substring(0, 10)}
+                          </span>
+                        )}
+
+                        {item.tags?.map((t) => (
+                          <span key={t} className="badge badge-tag">
+                            #{t}
+                          </span>
+                        ))}
+
+                        {item.attachment_count !== undefined && item.attachment_count > 0 && (
+                          <span
+                            className="badge badge-attachment"
+                            title={`${item.attachment_count} anexo(s)`}
+                          >
+                            <PaperclipIcon size={11} />
+                            {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
+                          </span>
+                        )}
+                      </div>
                     )}
 
-                    {item.waiting_on && (
-                      <span className="badge badge-waiting">~{item.waiting_on}</span>
-                    )}
-
-                    {(item.due_at || item.followup_at) && (
-                      <span className="badge badge-today">
-                        {(item.due_at || item.followup_at)?.substring(0, 10)}
-                      </span>
-                    )}
-
-                    {item.tags?.map((t) => (
-                      <span key={t} className="badge badge-tag">
-                        #{t}
-                      </span>
-                    ))}
-
-                    {item.attachment_count !== undefined && item.attachment_count > 0 && (
-                      <span
-                        className="badge badge-attachment"
-                        title={`${item.attachment_count} anexo(s)`}
-                      >
-                        <PaperclipIcon size={11} />
-                        {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
-                      </span>
-                    )}
+                    {item.body && <div className="item-body">{item.body}</div>}
                   </div>
-
-                  {item.body && <div className="item-body">{item.body}</div>}
                 </div>
 
                 <div className="item-actions">

@@ -343,116 +343,130 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           </span>
         )}
 
-        <input
-          type="checkbox"
-          className="item-checkbox"
-          checked={isDone}
-          onChange={() => handleToggleDone(item)}
-          title="Marcar como concluído"
-        />
+        <div className="item-row-top">
+          <input
+            type="checkbox"
+            className="item-checkbox"
+            checked={isDone}
+            onChange={() => handleToggleDone(item)}
+            title="Marcar como concluído"
+          />
 
-        <div
-          className="item-main"
-          style={{ cursor: "pointer" }}
-          onClick={() => setEditingItem(item)}
-          title="Clique para editar ou reclassificar"
-        >
-          <div className="item-title-line">
-            {priorityIndex !== undefined && (
-              <div className="priority-badge-group" onClick={(e) => e.stopPropagation()}>
-                <span
-                  className={`badge badge-priority ${priorityIndex === 0 ? "top-focus" : ""}`}
-                  title={`Prioridade #${priorityIndex + 1}${
-                    priorityIndex === 0 ? " (Foco Principal)" : ""
-                  }`}
-                >
-                  #{priorityIndex + 1}
-                </span>
+          <div
+            className="item-main"
+            style={{ cursor: "pointer" }}
+            onClick={() => setEditingItem(item)}
+            title="Clique para editar ou reclassificar"
+          >
+            <div className="item-title-row">
+              {priorityIndex !== undefined && (
+                <div className="priority-badge-group" onClick={(e) => e.stopPropagation()}>
+                  <span
+                    className={`badge badge-priority ${priorityIndex === 0 ? "top-focus" : ""}`}
+                    title={`Prioridade #${priorityIndex + 1}${
+                      priorityIndex === 0 ? " (Foco Principal)" : ""
+                    }`}
+                  >
+                    #{priorityIndex + 1}
+                  </span>
 
-                <div className="priority-nudge-arrows">
-                  <button
-                    type="button"
-                    className="btn-priority-nudge"
-                    disabled={priorityIndex === 0}
-                    onClick={() => handleNudgePriority(item, "up")}
-                    title="Aumentar prioridade (mover para cima)"
-                  >
-                    <ChevronUpIcon size={10} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-priority-nudge"
-                    disabled={priorityIndex === blocks.executing.length - 1}
-                    onClick={() => handleNudgePriority(item, "down")}
-                    title="Diminuir prioridade (mover para baixo)"
-                  >
-                    <ChevronDownIcon size={10} />
-                  </button>
+                  <div className="priority-nudge-arrows">
+                    <button
+                      type="button"
+                      className="btn-priority-nudge"
+                      disabled={priorityIndex === 0}
+                      onClick={() => handleNudgePriority(item, "up")}
+                      title="Aumentar prioridade (mover para cima)"
+                    >
+                      <ChevronUpIcon size={10} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-priority-nudge"
+                      disabled={priorityIndex === blocks.executing.length - 1}
+                      onClick={() => handleNudgePriority(item, "down")}
+                      title="Diminuir prioridade (mover para baixo)"
+                    >
+                      <ChevronDownIcon size={10} />
+                    </button>
+                  </div>
                 </div>
+              )}
+
+              <span className={`item-title ${isDone ? "done" : ""}`}>
+                {item.title}
+              </span>
+            </div>
+
+            {Boolean(
+              showOverdueBadge ||
+                item.context_name ||
+                item.ticket_ref ||
+                item.waiting_on ||
+                dateLabel ||
+                (item.tags && item.tags.length > 0) ||
+                (item.attachment_count !== undefined && item.attachment_count > 0)
+            ) && (
+              <div className="item-badges-row">
+                {showOverdueBadge && (
+                  <span className="badge badge-overdue">Atrasado</span>
+                )}
+
+                {item.context_name && (
+                  <span
+                    className="badge badge-context"
+                    style={{
+                      borderColor: item.context_color || undefined,
+                      cursor: "pointer",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedContext((prev) =>
+                        prev === item.context_name?.toLowerCase()
+                          ? "all"
+                          : (item.context_name?.toLowerCase() || "all")
+                      );
+                    }}
+                    title={`Clique para filtrar pelo contexto @${item.context_name}`}
+                  >
+                    @{item.context_name}
+                  </span>
+                )}
+
+                {item.ticket_ref && (
+                  <span className="badge badge-ticket">{item.ticket_ref}</span>
+                )}
+
+                {item.waiting_on && (
+                  <span className="badge badge-waiting">~{item.waiting_on}</span>
+                )}
+
+                {dateLabel && (
+                  <span className="badge badge-today">
+                    {dateLabel.substring(0, 10)}
+                  </span>
+                )}
+
+                {item.tags?.map((t) => (
+                  <span key={t} className="badge badge-tag">
+                    #{t}
+                  </span>
+                ))}
+
+                {item.attachment_count !== undefined && item.attachment_count > 0 && (
+                  <span
+                    className="badge badge-attachment"
+                    title={`${item.attachment_count} anexo(s)`}
+                  >
+                    <PaperclipIcon size={11} />
+                    {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
+                  </span>
+                )}
               </div>
             )}
 
-            <span className={`item-title ${isDone ? "done" : ""}`}>
-              {item.title}
-            </span>
-
-            {showOverdueBadge && (
-              <span className="badge badge-overdue">Atrasado</span>
-            )}
-
-            {item.context_name && (
-              <span
-                className="badge badge-context"
-                style={{
-                  borderColor: item.context_color || undefined,
-                  cursor: "pointer",
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedContext((prev) =>
-                    prev === item.context_name?.toLowerCase()
-                      ? "all"
-                      : (item.context_name?.toLowerCase() || "all")
-                  );
-                }}
-                title={`Clique para filtrar pelo contexto @${item.context_name}`}
-              >
-                @{item.context_name}
-              </span>
-            )}
-
-            {item.ticket_ref && (
-              <span className="badge badge-ticket">{item.ticket_ref}</span>
-            )}
-
-            {item.waiting_on && (
-              <span className="badge badge-waiting">~{item.waiting_on}</span>
-            )}
-
-            {dateLabel && (
-              <span className="badge badge-today">
-                {dateLabel.substring(0, 10)}
-              </span>
-            )}
-
-            {item.tags?.map((t) => (
-              <span key={t} className="badge badge-tag">
-                #{t}
-              </span>
-            ))}
-
-            {item.attachment_count !== undefined && item.attachment_count > 0 && (
-              <span
-                className="badge badge-attachment"
-                title={`${item.attachment_count} anexo(s)`}
-              >
-                <PaperclipIcon size={11} />
-                {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
-              </span>
-            )}
+            {item.body && <div className="item-body">{item.body}</div>}
           </div>
-
-          {item.body && <div className="item-body">{item.body}</div>}
         </div>
 
         <div className="item-actions">
@@ -675,8 +689,13 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
                 <span>Atividades em Execução (Ordem de Prioridade)</span>
                 <span className="card-count">{blocks.executing.length}</span>
               </div>
-              <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "2px" }}>
-                Arraste os itens pelo ícone à esquerda para ordenar por prioridade. O item #1 é seu foco principal.
+              <div className="card-subtitle">
+                <span className="drag-tip-desktop">
+                  Arraste os itens pelo ícone à esquerda ou use as setas para ordenar por prioridade. O item #1 é seu foco principal.
+                </span>
+                <span className="drag-tip-mobile">
+                  Ordene as demandas por prioridade usando as setas ▲ e ▼. O item #1 é seu foco principal.
+                </span>
               </div>
             </div>
           </div>

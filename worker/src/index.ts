@@ -313,6 +313,16 @@ app.post("/api/sync", async (c) => {
   const { items = [], contexts = [] } = await c.req.json<{ items: any[]; contexts: any[] }>();
   const serverTime = new Date().toISOString();
 
+  // If no changes were provided, short-circuit immediately without executing D1 statements
+  if (items.length === 0 && contexts.length === 0) {
+    return c.json({
+      ok: true,
+      server_time: serverTime,
+      processed_items: 0,
+      processed_contexts: 0,
+    });
+  }
+
   const statements: D1PreparedStatement[] = [];
 
   // 1. Process contexts (Last-Write-Wins based on updated_at)
