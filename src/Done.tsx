@@ -1,16 +1,20 @@
 import React, { useEffect, useState } from "react";
-import { getDoneItems, updateItem } from "./commands";
-import type { Item } from "./types";
+import { getDoneItems, updateItem, getContexts } from "./commands";
+import { EditModal } from "./EditModal";
+import type { Item, Context } from "./types";
 
 export const Done: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
+  const [contexts, setContexts] = useState<Context[]>([]);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
     try {
-      const data = await getDoneItems();
+      const [data, ctxs] = await Promise.all([getDoneItems(), getContexts()]);
       setItems(data);
+      setContexts(ctxs);
     } catch (e) {
       console.error("Erro ao carregar concluídos:", e);
     } finally {
@@ -79,7 +83,12 @@ export const Done: React.FC = () => {
                 title="Desmarcar para reabrir"
               />
 
-              <div className="item-main">
+              <div
+                className="item-main"
+                style={{ cursor: "pointer" }}
+                onClick={() => setEditingItem(item)}
+                title="Clique para editar ou reclassificar"
+              >
                 <div className="item-title-line">
                   <span className="item-title done">{item.title}</span>
 
@@ -100,12 +109,25 @@ export const Done: React.FC = () => {
                       Concluído em: {item.done_at.substring(0, 10)}
                     </span>
                   )}
+
+                  {item.tags?.map((t) => (
+                    <span key={t} className="badge badge-tag">
+                      #{t}
+                    </span>
+                  ))}
                 </div>
 
                 {item.body && <div className="item-body">{item.body}</div>}
               </div>
 
               <div className="item-actions">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setEditingItem(item)}
+                  title="Editar e Reclassificar"
+                >
+                  Editar
+                </button>
                 <button
                   className="btn btn-secondary btn-sm"
                   onClick={() => handleReopen(item)}
@@ -116,6 +138,15 @@ export const Done: React.FC = () => {
             </div>
           ))}
         </div>
+      )}
+
+      {editingItem && (
+        <EditModal
+          item={editingItem}
+          contexts={contexts}
+          onClose={() => setEditingItem(null)}
+          onSaved={loadData}
+        />
       )}
     </div>
   );

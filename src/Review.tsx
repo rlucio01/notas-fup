@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { getReviewItems, updateItem } from "./commands";
-import type { ReviewData, Item } from "./types";
+import { getReviewItems, updateItem, getContexts } from "./commands";
+import { EditModal } from "./EditModal";
+import type { ReviewData, Item, Context } from "./types";
 
 export const Review: React.FC = () => {
   const [data, setData] = useState<ReviewData>({
@@ -8,12 +9,18 @@ export const Review: React.FC = () => {
     due_today: [],
     stale: [],
   });
+  const [contexts, setContexts] = useState<Context[]>([]);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
   const [staleDays] = useState(5);
 
   const loadData = async () => {
     try {
-      const items = await getReviewItems(staleDays);
+      const [items, ctxs] = await Promise.all([
+        getReviewItems(staleDays),
+        getContexts(),
+      ]);
+      setContexts(ctxs);
       const todayStr = new Date().toISOString().substring(0, 10);
       const staleThreshold = new Date();
       staleThreshold.setDate(staleThreshold.getDate() - staleDays);
@@ -69,7 +76,12 @@ export const Review: React.FC = () => {
           checked={isDone}
           onChange={() => handleToggleDone(item)}
         />
-        <div className="item-main">
+        <div
+          className="item-main"
+          style={{ cursor: "pointer" }}
+          onClick={() => setEditingItem(item)}
+          title="Clique para editar ou reclassificar"
+        >
           <div className="item-title-line">
             <span className={`item-title ${isDone ? "done" : ""}`}>
               {item.title}
@@ -83,10 +95,22 @@ export const Review: React.FC = () => {
             {item.waiting_on && (
               <span className="badge badge-waiting">~{item.waiting_on}</span>
             )}
+            {item.tags?.map((t) => (
+              <span key={t} className="badge badge-tag">
+                #{t}
+              </span>
+            ))}
           </div>
           {item.body && <div className="item-body">{item.body}</div>}
         </div>
         <div className="item-actions">
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setEditingItem(item)}
+            title="Editar ou Reclassificar (Contexto, Tags, Datas)"
+          >
+            Editar
+          </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => handlePostponeTomorrow(item)}
@@ -164,6 +188,15 @@ export const Review: React.FC = () => {
           </div>
         )}
       </div>
+
+      {editingItem && (
+        <EditModal
+          item={editingItem}
+          contexts={contexts}
+          onClose={() => setEditingItem(null)}
+          onSaved={loadData}
+        />
+      )}
     </div>
   );
 };

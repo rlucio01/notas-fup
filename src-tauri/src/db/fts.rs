@@ -26,11 +26,8 @@ pub fn search(conn: &Connection, query: &str) -> Result<Vec<Item>> {
         parts.join(" ")
     };
 
-    let mut stmt = conn.prepare(
-        "SELECT i.id, i.context_id, i.kind, i.title, i.body, i.status,
-                i.waiting_on, i.followup_at, i.due_at, i.ticket_ref, i.url,
-                i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
-                i.deleted_at, c.name, c.color
+    let sql = format!(
+        "SELECT {cols}
          FROM items i
          JOIN items_fts ON items_fts.rowid = i.rowid
          LEFT JOIN contexts c ON i.context_id = c.id
@@ -38,32 +35,12 @@ pub fn search(conn: &Connection, query: &str) -> Result<Vec<Item>> {
            AND i.deleted_at IS NULL
          ORDER BY rank
          LIMIT 100",
-    )?;
+        cols = crate::db::queries::ITEM_SELECT_COLS
+    );
+    let mut stmt = conn.prepare(&sql)?;
 
     let items = stmt
-        .query_map(params![&fts_query], |row| {
-            Ok(Item {
-                id: row.get(0)?,
-                context_id: row.get(1)?,
-                kind: row.get(2)?,
-                title: row.get(3)?,
-                body: row.get(4)?,
-                status: row.get(5)?,
-                waiting_on: row.get(6)?,
-                followup_at: row.get(7)?,
-                due_at: row.get(8)?,
-                ticket_ref: row.get(9)?,
-                url: row.get(10)?,
-                done_at: row.get(11)?,
-                source: row.get(12)?,
-                origin_app: row.get(13)?,
-                created_at: row.get(14)?,
-                updated_at: row.get(15)?,
-                deleted_at: row.get(16)?,
-                context_name: row.get(17)?,
-                context_color: row.get(18)?,
-            })
-        })?
+        .query_map(params![&fts_query], crate::db::queries::map_item_row)?
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     Ok(items)

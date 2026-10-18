@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { getInboxItems, getContexts, updateItem } from "./commands";
 import { parseDateToken } from "./capture-syntax";
+import { EditModal } from "./EditModal";
 import type { Item, Context } from "./types";
 
 export const Inbox: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [contexts, setContexts] = useState<Context[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Active modal/prompt state for keyboard shortcuts
@@ -35,8 +37,8 @@ export const Inbox: React.FC = () => {
   // Handle global keyboard shortcuts on the inbox
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      // If a modal prompt is open, don't intercept keys
-      if (promptMode !== null) return;
+      // If a modal prompt or edit modal is open, don't intercept keys
+      if (promptMode !== null || editingItem !== null) return;
       if (!selectedItem) return;
 
       const key = e.key.toLowerCase();
@@ -47,6 +49,9 @@ export const Inbox: React.FC = () => {
       } else if (e.key === "ArrowUp" || key === "k") {
         e.preventDefault();
         setSelectedIndex((i) => Math.max(i - 1, 0));
+      } else if (key === "e") {
+        e.preventDefault();
+        setEditingItem(selectedItem);
       } else if (key === "c") {
         e.preventDefault();
         setPromptMode("context");
@@ -76,7 +81,7 @@ export const Inbox: React.FC = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [promptMode, selectedItem, items.length, loadData]);
+  }, [promptMode, editingItem, selectedItem, items.length, loadData]);
 
   const handlePromptSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -155,6 +160,7 @@ export const Inbox: React.FC = () => {
       <div className="shortcut-bar">
         <span>Atalhos rápidos:</span>
         <span><span className="kbd-badge">J</span>/<span className="kbd-badge">K</span> navegar</span>
+        <span><span className="kbd-badge">E</span> editar tudo</span>
         <span><span className="kbd-badge">C</span> contexto</span>
         <span><span className="kbd-badge">T</span> tag</span>
         <span><span className="kbd-badge">D</span> data</span>
@@ -188,7 +194,12 @@ export const Inbox: React.FC = () => {
                   title="Concluir item (X)"
                 />
 
-                <div className="item-main">
+                <div
+                  className="item-main"
+                  style={{ cursor: "pointer" }}
+                  onDoubleClick={() => setEditingItem(item)}
+                  title="Clique duas vezes ou pressione E para editar"
+                >
                   <div className="item-title-line">
                     <span className="item-title">{item.title}</span>
 
@@ -217,6 +228,16 @@ export const Inbox: React.FC = () => {
                 </div>
 
                 <div className="item-actions">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingItem(item);
+                    }}
+                    title="Editar e Reclassificar Nota (E)"
+                  >
+                    Editar
+                  </button>
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={(e) => {
@@ -351,6 +372,15 @@ export const Inbox: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {editingItem && (
+        <EditModal
+          item={editingItem}
+          contexts={contexts}
+          onClose={() => setEditingItem(null)}
+          onSaved={loadData}
+        />
       )}
     </div>
   );

@@ -32,6 +32,49 @@ pub struct Item {
     pub context_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_color: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+pub const ITEM_SELECT_COLS: &str = "i.id, i.context_id, i.kind, i.title, i.body, i.status,
+        i.waiting_on, i.followup_at, i.due_at, i.ticket_ref, i.url,
+        i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
+        i.deleted_at, c.name, c.color,
+        (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id)";
+
+pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
+    let tags_csv: Option<String> = row.get(19)?;
+    let tags = match tags_csv {
+        Some(s) if !s.is_empty() => s
+            .split(',')
+            .filter(|t| !t.is_empty())
+            .map(|t| t.to_string())
+            .collect(),
+        _ => vec![],
+    };
+
+    Ok(Item {
+        id: row.get(0)?,
+        context_id: row.get(1)?,
+        kind: row.get(2)?,
+        title: row.get(3)?,
+        body: row.get(4)?,
+        status: row.get(5)?,
+        waiting_on: row.get(6)?,
+        followup_at: row.get(7)?,
+        due_at: row.get(8)?,
+        ticket_ref: row.get(9)?,
+        url: row.get(10)?,
+        done_at: row.get(11)?,
+        source: row.get(12)?,
+        origin_app: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
+        deleted_at: row.get(16)?,
+        context_name: row.get(17)?,
+        context_color: row.get(18)?,
+        tags,
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,11 +161,8 @@ pub struct UpdateItem {
 /// and inbox items. Excludes done/dropped and soft-deleted.
 pub fn get_today_items(conn: &Connection) -> Result<Vec<Item>> {
     let today = Utc::now().format("%Y-%m-%d").to_string();
-    let mut stmt = conn.prepare(
-        "SELECT i.id, i.context_id, i.kind, i.title, i.body, i.status,
-                i.waiting_on, i.followup_at, i.due_at, i.ticket_ref, i.url,
-                i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
-                i.deleted_at, c.name, c.color
+    let sql = format!(
+        "SELECT {ITEM_SELECT_COLS}
          FROM items i
          LEFT JOIN contexts c ON i.context_id = c.id
          WHERE i.deleted_at IS NULL
@@ -142,33 +182,11 @@ pub fn get_today_items(conn: &Connection) -> Result<Vec<Item>> {
              WHEN i.status = 'inbox' THEN 4
              ELSE 5
            END,
-           i.created_at DESC",
-    )?;
-
+           i.created_at DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let items = stmt
-        .query_map([&today], |row| {
-            Ok(Item {
-                id: row.get(0)?,
-                context_id: row.get(1)?,
-                kind: row.get(2)?,
-                title: row.get(3)?,
-                body: row.get(4)?,
-                status: row.get(5)?,
-                waiting_on: row.get(6)?,
-                followup_at: row.get(7)?,
-                due_at: row.get(8)?,
-                ticket_ref: row.get(9)?,
-                url: row.get(10)?,
-                done_at: row.get(11)?,
-                source: row.get(12)?,
-                origin_app: row.get(13)?,
-                created_at: row.get(14)?,
-                updated_at: row.get(15)?,
-                deleted_at: row.get(16)?,
-                context_name: row.get(17)?,
-                context_color: row.get(18)?,
-            })
-        })?
+        .query_map([&today], map_item_row)?
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     Ok(items)
@@ -177,41 +195,16 @@ pub fn get_today_items(conn: &Connection) -> Result<Vec<Item>> {
 // ── Inbox items ─────────────────────────────────────────────────────────
 
 pub fn get_inbox_items(conn: &Connection) -> Result<Vec<Item>> {
-    let mut stmt = conn.prepare(
-        "SELECT i.id, i.context_id, i.kind, i.title, i.body, i.status,
-                i.waiting_on, i.followup_at, i.due_at, i.ticket_ref, i.url,
-                i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
-                i.deleted_at, c.name, c.color
+    let sql = format!(
+        "SELECT {ITEM_SELECT_COLS}
          FROM items i
          LEFT JOIN contexts c ON i.context_id = c.id
          WHERE i.deleted_at IS NULL AND i.status = 'inbox'
-         ORDER BY i.created_at DESC",
-    )?;
-
+         ORDER BY i.created_at DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let items = stmt
-        .query_map([], |row| {
-            Ok(Item {
-                id: row.get(0)?,
-                context_id: row.get(1)?,
-                kind: row.get(2)?,
-                title: row.get(3)?,
-                body: row.get(4)?,
-                status: row.get(5)?,
-                waiting_on: row.get(6)?,
-                followup_at: row.get(7)?,
-                due_at: row.get(8)?,
-                ticket_ref: row.get(9)?,
-                url: row.get(10)?,
-                done_at: row.get(11)?,
-                source: row.get(12)?,
-                origin_app: row.get(13)?,
-                created_at: row.get(14)?,
-                updated_at: row.get(15)?,
-                deleted_at: row.get(16)?,
-                context_name: row.get(17)?,
-                context_color: row.get(18)?,
-            })
-        })?
+        .query_map([], map_item_row)?
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     Ok(items)
@@ -220,42 +213,17 @@ pub fn get_inbox_items(conn: &Connection) -> Result<Vec<Item>> {
 // ── Done items ──────────────────────────────────────────────────────────
 
 pub fn get_done_items(conn: &Connection) -> Result<Vec<Item>> {
-    let mut stmt = conn.prepare(
-        "SELECT i.id, i.context_id, i.kind, i.title, i.body, i.status,
-                i.waiting_on, i.followup_at, i.due_at, i.ticket_ref, i.url,
-                i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
-                i.deleted_at, c.name, c.color
+    let sql = format!(
+        "SELECT {ITEM_SELECT_COLS}
          FROM items i
          LEFT JOIN contexts c ON i.context_id = c.id
          WHERE i.deleted_at IS NULL AND i.status IN ('done', 'dropped')
          ORDER BY i.done_at DESC, i.updated_at DESC
-         LIMIT 200",
-    )?;
-
+         LIMIT 200"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let items = stmt
-        .query_map([], |row| {
-            Ok(Item {
-                id: row.get(0)?,
-                context_id: row.get(1)?,
-                kind: row.get(2)?,
-                title: row.get(3)?,
-                body: row.get(4)?,
-                status: row.get(5)?,
-                waiting_on: row.get(6)?,
-                followup_at: row.get(7)?,
-                due_at: row.get(8)?,
-                ticket_ref: row.get(9)?,
-                url: row.get(10)?,
-                done_at: row.get(11)?,
-                source: row.get(12)?,
-                origin_app: row.get(13)?,
-                created_at: row.get(14)?,
-                updated_at: row.get(15)?,
-                deleted_at: row.get(16)?,
-                context_name: row.get(17)?,
-                context_color: row.get(18)?,
-            })
-        })?
+        .query_map([], map_item_row)?
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     Ok(items)
@@ -270,11 +238,8 @@ pub fn get_review_items(conn: &Connection, stale_days: i64) -> Result<Vec<Item>>
         .to_string();
     let today_start = format!("{today}T00:00:00");
 
-    let mut stmt = conn.prepare(
-        "SELECT i.id, i.context_id, i.kind, i.title, i.body, i.status,
-                i.waiting_on, i.followup_at, i.due_at, i.ticket_ref, i.url,
-                i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
-                i.deleted_at, c.name, c.color
+    let sql = format!(
+        "SELECT {ITEM_SELECT_COLS}
          FROM items i
          LEFT JOIN contexts c ON i.context_id = c.id
          WHERE i.deleted_at IS NULL
@@ -283,33 +248,11 @@ pub fn get_review_items(conn: &Connection, stale_days: i64) -> Result<Vec<Item>>
                OR (i.due_at IS NOT NULL AND i.due_at <= ?2 AND i.status NOT IN ('done', 'dropped'))
                OR (i.updated_at < ?3 AND i.status NOT IN ('done', 'dropped', 'inbox'))
            )
-         ORDER BY i.created_at DESC",
-    )?;
-
+         ORDER BY i.created_at DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let items = stmt
-        .query_map(params![&today_start, &today, &stale_date], |row| {
-            Ok(Item {
-                id: row.get(0)?,
-                context_id: row.get(1)?,
-                kind: row.get(2)?,
-                title: row.get(3)?,
-                body: row.get(4)?,
-                status: row.get(5)?,
-                waiting_on: row.get(6)?,
-                followup_at: row.get(7)?,
-                due_at: row.get(8)?,
-                ticket_ref: row.get(9)?,
-                url: row.get(10)?,
-                done_at: row.get(11)?,
-                source: row.get(12)?,
-                origin_app: row.get(13)?,
-                created_at: row.get(14)?,
-                updated_at: row.get(15)?,
-                deleted_at: row.get(16)?,
-                context_name: row.get(17)?,
-                context_color: row.get(18)?,
-            })
-        })?
+        .query_map(params![&today_start, &today, &stale_date], map_item_row)?
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     Ok(items)
@@ -397,6 +340,7 @@ pub fn insert_item(conn: &Connection, new: &NewItem) -> Result<Item> {
         deleted_at: None,
         context_name: None,
         context_color: None,
+        tags: new.tags.clone(),
     })
 }
 
@@ -506,39 +450,13 @@ pub fn update_item(conn: &Connection, update: &UpdateItem) -> Result<Item> {
 }
 
 pub fn get_item_by_id(conn: &Connection, id: &str) -> Result<Item> {
-    let item = conn.query_row(
-        "SELECT i.id, i.context_id, i.kind, i.title, i.body, i.status,
-                i.waiting_on, i.followup_at, i.due_at, i.ticket_ref, i.url,
-                i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
-                i.deleted_at, c.name, c.color
+    let sql = format!(
+        "SELECT {ITEM_SELECT_COLS}
          FROM items i
          LEFT JOIN contexts c ON i.context_id = c.id
-         WHERE i.id = ?1",
-        [id],
-        |row| {
-            Ok(Item {
-                id: row.get(0)?,
-                context_id: row.get(1)?,
-                kind: row.get(2)?,
-                title: row.get(3)?,
-                body: row.get(4)?,
-                status: row.get(5)?,
-                waiting_on: row.get(6)?,
-                followup_at: row.get(7)?,
-                due_at: row.get(8)?,
-                ticket_ref: row.get(9)?,
-                url: row.get(10)?,
-                done_at: row.get(11)?,
-                source: row.get(12)?,
-                origin_app: row.get(13)?,
-                created_at: row.get(14)?,
-                updated_at: row.get(15)?,
-                deleted_at: row.get(16)?,
-                context_name: row.get(17)?,
-                context_color: row.get(18)?,
-            })
-        },
-    )?;
+         WHERE i.id = ?1"
+    );
+    let item = conn.query_row(&sql, [id], map_item_row)?;
     Ok(item)
 }
 
@@ -727,6 +645,29 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tag_count, 2);
+
+        let fetched = get_item_by_id(&conn, &item.id).unwrap();
+        assert_eq!(fetched.tags.len(), 2);
+        assert!(fetched.tags.contains(&"finops".to_string()));
+        assert!(fetched.tags.contains(&"cloud".to_string()));
+
+        // Test updating/reclassifying tags
+        let update = UpdateItem {
+            id: item.id.clone(),
+            context_id: None,
+            kind: None,
+            title: None,
+            body: None,
+            status: None,
+            waiting_on: None,
+            followup_at: None,
+            due_at: None,
+            ticket_ref: None,
+            url: None,
+            tags: Some(vec!["nova_tag".to_string()]),
+        };
+        let updated = update_item(&conn, &update).unwrap();
+        assert_eq!(updated.tags, vec!["nova_tag".to_string()]);
     }
 
     #[test]

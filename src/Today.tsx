@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getTodayItems, getInboxItems, updateItem } from "./commands";
+import { getTodayItems, getInboxItems, updateItem, getContexts } from "./commands";
 import { computeTodayBlocks } from "./today-blocks";
-import type { Item, TodayBlocks } from "./types";
+import { EditModal } from "./EditModal";
+import type { Item, TodayBlocks, Context } from "./types";
 
 interface TodayProps {
   onNavigateToInbox: () => void;
@@ -15,11 +16,18 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     waiting: {},
     inbox_count: 0,
   });
+  const [contexts, setContexts] = useState<Context[]>([]);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
-      const [items, inbox] = await Promise.all([getTodayItems(), getInboxItems()]);
+      const [items, inbox, ctxs] = await Promise.all([
+        getTodayItems(),
+        getInboxItems(),
+        getContexts(),
+      ]);
+      setContexts(ctxs);
       const todayStr = new Date().toISOString().substring(0, 10);
       const computed = computeTodayBlocks(items, todayStr);
       computed.inbox_count = inbox.length;
@@ -89,7 +97,12 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           title="Marcar como concluído"
         />
 
-        <div className="item-main">
+        <div
+          className="item-main"
+          style={{ cursor: "pointer" }}
+          onClick={() => setEditingItem(item)}
+          title="Clique para editar ou reclassificar"
+        >
           <div className="item-title-line">
             <span className={`item-title ${isDone ? "done" : ""}`}>
               {item.title}
@@ -123,6 +136,12 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
                 {dateLabel.substring(0, 10)}
               </span>
             )}
+
+            {item.tags?.map((t) => (
+              <span key={t} className="badge badge-tag">
+                #{t}
+              </span>
+            ))}
           </div>
 
           {item.body && <div className="item-body">{item.body}</div>}
@@ -140,6 +159,13 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
               Link
             </a>
           )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setEditingItem(item)}
+            title="Editar ou Reclassificar (Contexto, Tags, Datas)"
+          >
+            Editar
+          </button>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => handlePostponeTomorrow(item)}
@@ -271,6 +297,15 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         <div className="empty-state">
           Nenhuma demanda ativa. Capture itens com o atalho global Ctrl+Alt+N ou importe do Notepad.
         </div>
+      )}
+
+      {editingItem && (
+        <EditModal
+          item={editingItem}
+          contexts={contexts}
+          onClose={() => setEditingItem(null)}
+          onSaved={loadData}
+        />
       )}
     </div>
   );

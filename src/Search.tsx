@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { searchItems, getContexts, updateItem } from "./commands";
+import { EditModal } from "./EditModal";
 import type { Item, Context } from "./types";
 
 export const Search: React.FC = () => {
@@ -9,6 +10,7 @@ export const Search: React.FC = () => {
   const [selectedContext, setSelectedContext] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedKind, setSelectedKind] = useState<string>("all");
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -184,7 +186,12 @@ export const Search: React.FC = () => {
                   onChange={() => handleToggleDone(item)}
                 />
 
-                <div className="item-main">
+                <div
+                  className="item-main"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setEditingItem(item)}
+                  title="Clique para editar ou reclassificar"
+                >
                   <div className="item-title-line">
                     <span className={`item-title ${isDone ? "done" : ""}`}>
                       {item.title}
@@ -213,25 +220,55 @@ export const Search: React.FC = () => {
                         {(item.due_at || item.followup_at)?.substring(0, 10)}
                       </span>
                     )}
+
+                    {item.tags?.map((t) => (
+                      <span key={t} className="badge badge-tag">
+                        #{t}
+                      </span>
+                    ))}
                   </div>
 
                   {item.body && <div className="item-body">{item.body}</div>}
                 </div>
 
-                {item.url && (
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
+                <div className="item-actions">
+                  <button
                     className="btn btn-secondary btn-sm"
+                    onClick={() => setEditingItem(item)}
+                    title="Editar e Reclassificar"
                   >
-                    Link
-                  </a>
-                )}
+                    Editar
+                  </button>
+
+                  {item.url && (
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-secondary btn-sm"
+                    >
+                      Link
+                    </a>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {editingItem && (
+        <EditModal
+          item={editingItem}
+          contexts={contexts}
+          onClose={() => setEditingItem(null)}
+          onSaved={async () => {
+            if (query.trim()) {
+              const res = await searchItems(query.trim());
+              setResults(res);
+            }
+          }}
+        />
       )}
     </div>
   );
