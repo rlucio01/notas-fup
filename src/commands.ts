@@ -85,6 +85,10 @@ export async function getActiveApp(): Promise<string | null> {
   }
 }
 
+export async function openCaptureWindow(): Promise<void> {
+  await invoke("open_capture_window_cmd");
+}
+
 export async function closeCaptureWindow(): Promise<void> {
   await invoke("close_capture_window_cmd");
 }
