@@ -381,7 +381,7 @@ pub fn run() {
         default_hook(info);
     }));
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_focus();
@@ -401,7 +401,8 @@ pub fn run() {
         ))
         .on_window_event(|window, event| {
             // When user closes any window, explicitly destroy it so WebView2 frees memory
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
                 let _ = window.destroy();
             }
         })
@@ -470,6 +471,14 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|_app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            if !tray::should_exit() {
+                api.prevent_exit();
+            }
+        }
+    });
 }

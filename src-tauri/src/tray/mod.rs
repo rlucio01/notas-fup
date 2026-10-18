@@ -1,8 +1,22 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle,
 };
+
+static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
+
+/// Returns true only if the user explicitly clicked "Sair" in the tray menu.
+pub fn should_exit() -> bool {
+    SHOULD_EXIT.load(Ordering::SeqCst)
+}
+
+/// Request a real exit of the application process.
+pub fn request_exit(app: &AppHandle) {
+    SHOULD_EXIT.store(true, Ordering::SeqCst);
+    app.exit(0);
+}
 
 /// Initialize system tray with menu and left-click quick capture trigger.
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
@@ -38,7 +52,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
             "quit" => {
-                app.exit(0);
+                request_exit(app);
             }
             _ => {}
         })
