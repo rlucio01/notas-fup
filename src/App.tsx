@@ -260,22 +260,45 @@ export const App: React.FC = () => {
       {/* Sidebar */}
       <aside className={`sidebar ${sidebarCollapsed ? "collapsed" : ""}`}>
         <div className="sidebar-header">
-          <div className="sidebar-brand-box" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "8px" }}>
-            <img src="/favicon.png" width="24" height="24" alt="Notas FUP Logo" style={{ borderRadius: "5px", flexShrink: 0 }} />
-            {!sidebarCollapsed && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
-                <div className="brand-title">Notas FUP</div>
-                <div className="brand-subtitle">Captura e Follow-up</div>
+          {sidebarCollapsed ? (
+            <div className="sidebar-collapsed-header-box">
+              <img
+                src="/favicon.png"
+                alt="Notas FUP Logo"
+                className="sidebar-brand-icon-collapsed"
+                onClick={toggleSidebar}
+                title="Expandir barra lateral (Ctrl+B)"
+              />
+              <button
+                className="sidebar-toggle-btn"
+                onClick={toggleSidebar}
+                title="Expandir barra lateral (Ctrl+B)"
+              >
+                »
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="sidebar-brand-box">
+                <img
+                  src="/favicon.png"
+                  alt="Notas FUP Logo"
+                  className="sidebar-brand-icon"
+                />
+                <div className="sidebar-brand-text">
+                  <div className="brand-title">Notas FUP</div>
+                  <div className="brand-subtitle">Captura e Follow-up</div>
+                </div>
               </div>
-            )}
-          </div>
-          <button
-            className="sidebar-toggle-btn"
-            onClick={toggleSidebar}
-            title={sidebarCollapsed ? "Expandir barra lateral (Ctrl+B)" : "Recolher barra lateral (Ctrl+B)"}
-          >
-            {sidebarCollapsed ? "»" : "«"}
-          </button>
+              <button
+                className="sidebar-toggle-btn"
+                onClick={toggleSidebar}
+                title="Recolher barra lateral (Ctrl+B)"
+              >
+                «
+              </button>
+            </>
+          )}
         </div>
 
         <nav className="sidebar-nav">

@@ -128,14 +128,34 @@ body, html, #root {
   justify-content: space-between;
   min-height: 62px;
   border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
 }
 
 .sidebar-brand-box {
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sidebar-brand-icon {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.sidebar-brand-text {
+  display: flex;
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
-  white-space: nowrap;
 }
 
 .sidebar-toggle-btn {
@@ -175,12 +195,49 @@ body, html, #root {
 }
 
 .sidebar.collapsed .sidebar-header {
-  padding: 16px 8px;
+  padding: 8px 4px;
   justify-content: center;
+  align-items: center;
 }
 
-.sidebar.collapsed .sidebar-brand-box {
-  display: none;
+.sidebar-collapsed-header-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.sidebar-brand-icon-collapsed {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  border-radius: 6px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.sidebar-brand-icon-collapsed:hover {
+  transform: scale(1.08);
+  filter: brightness(1.1);
+}
+
+.sidebar.collapsed .sidebar-toggle-btn {
+  width: 28px;
+  height: 18px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 4px;
+  opacity: 0.75;
+}
+
+.sidebar.collapsed .sidebar-toggle-btn:hover {
+  opacity: 1;
 }
 
 .sidebar-nav {
