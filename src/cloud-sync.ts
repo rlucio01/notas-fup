@@ -1,9 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Item, Context } from "./types";
 
+export const isTauri = (): boolean => {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+};
+
 export const CLOUD_CONFIG_KEY = "notas_fup_cloud_config";
 export const DEFAULT_CLOUD_URL = "https://notas-fup-api.rlucio01.workers.dev";
-export const DEFAULT_CLOUD_SECRET = "rafa01!@@";
+export const DEFAULT_CLOUD_SECRET = isTauri() ? "rafa01!@@" : "";
 
 export interface CloudConfig {
   enabled: boolean;
@@ -39,9 +43,7 @@ export function saveCloudConfig(config: CloudConfig): void {
   localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config));
 }
 
-export const isTauri = (): boolean => {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-};
+
 
 // ── Cloudflare Sync Engine (Local SQLite <-> Cloudflare D1) ─────────────
 

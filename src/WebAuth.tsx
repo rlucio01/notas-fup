@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { getCloudConfig, saveCloudConfig, DEFAULT_CLOUD_URL, DEFAULT_CLOUD_SECRET } from "./cloud-sync";
+import { getCloudConfig, saveCloudConfig, DEFAULT_CLOUD_URL } from "./cloud-sync";
 
 interface WebAuthProps {
   onAuthenticated: () => void;
 }
 
 export const WebAuth: React.FC<WebAuthProps> = ({ onAuthenticated }) => {
-  const [secret, setSecret] = useState(DEFAULT_CLOUD_SECRET);
+  const [secret, setSecret] = useState("");
   const [apiUrl, setApiUrl] = useState(DEFAULT_CLOUD_URL);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

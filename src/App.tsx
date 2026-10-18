@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getInboxItems, openCaptureWindow, getContexts, createItem } from "./commands";
-import { isTauri, CLOUD_CONFIG_KEY } from "./cloud-sync";
+import { isTauri, getCloudConfig } from "./cloud-sync";
 import { WebAuth } from "./WebAuth";
 import { EditModal } from "./EditModal";
 import type { Context, Item } from "./types";
@@ -21,7 +21,9 @@ type Theme = "dark" | "light";
 
 export const App: React.FC = () => {
   const [authenticated, setAuthenticated] = useState<boolean>(() => {
-    return isTauri() || Boolean(localStorage.getItem(CLOUD_CONFIG_KEY));
+    if (isTauri()) return true;
+    const config = getCloudConfig();
+    return Boolean(config && config.secret && config.secret.trim().length > 0);
   });
   const [activeTab, setActiveTab] = useState<TabId>("today");
   const [inboxCount, setInboxCount] = useState<number>(0);
