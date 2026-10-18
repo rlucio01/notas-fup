@@ -34,13 +34,26 @@ pub struct Item {
     pub context_color: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub attachment_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attachment {
+    pub id: String,
+    pub item_id: String,
+    pub filename: Option<String>,
+    pub mime_type: String,
+    pub data: String,
+    pub created_at: String,
 }
 
 pub const ITEM_SELECT_COLS: &str = "i.id, i.context_id, i.kind, i.title, i.body, i.status,
         i.waiting_on, i.followup_at, i.due_at, i.ticket_ref, i.url,
         i.done_at, i.source, i.origin_app, i.created_at, i.updated_at,
         i.deleted_at, c.name, c.color,
-        (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id)";
+        (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id),
+        (SELECT COUNT(*) FROM attachments a WHERE a.item_id = i.id)";
 
 pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
     let tags_csv: Option<String> = row.get(19)?;
@@ -52,6 +65,7 @@ pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
             .collect(),
         _ => vec![],
     };
+    let attachment_count: i64 = row.get(20).unwrap_or(0);
 
     Ok(Item {
         id: row.get(0)?,
@@ -74,6 +88,7 @@ pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
         context_name: row.get(17)?,
         context_color: row.get(18)?,
         tags,
+        attachment_count,
     })
 }
 
@@ -341,6 +356,7 @@ pub fn insert_item(conn: &Connection, new: &NewItem) -> Result<Item> {
         context_name: None,
         context_color: None,
         tags: new.tags.clone(),
+        attachment_count: 0,
     })
 }
 
@@ -555,6 +571,69 @@ pub fn import_proposed_items(conn: &Connection, proposed: &[ProposedItem]) -> Re
     Ok(imported)
 }
 
+// ── Attachments ─────────────────────────────────────────────────────────
+
+pub fn add_attachment(
+    conn: &Connection,
+    item_id: &str,
+    filename: Option<&str>,
+    mime_type: &str,
+    data: &str,
+) -> Result<Attachment> {
+    let id = Uuid::now_v7().to_string();
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO attachments (id, item_id, filename, mime_type, data, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![&id, item_id, &filename, mime_type, data, &now],
+    )?;
+
+    // Touch item updated_at
+    conn.execute(
+        "UPDATE items SET updated_at = ?1 WHERE id = ?2",
+        params![&now, item_id],
+    )?;
+
+    Ok(Attachment {
+        id,
+        item_id: item_id.to_string(),
+        filename: filename.map(|s| s.to_string()),
+        mime_type: mime_type.to_string(),
+        data: data.to_string(),
+        created_at: now,
+    })
+}
+
+pub fn get_item_attachments(conn: &Connection, item_id: &str) -> Result<Vec<Attachment>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, item_id, filename, mime_type, data, created_at
+         FROM attachments
+         WHERE item_id = ?1
+         ORDER BY created_at ASC",
+    )?;
+
+    let attachments = stmt
+        .query_map([item_id], |row| {
+            Ok(Attachment {
+                id: row.get(0)?,
+                item_id: row.get(1)?,
+                filename: row.get(2)?,
+                mime_type: row.get(3)?,
+                data: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(attachments)
+}
+
+pub fn delete_attachment(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM attachments WHERE id = ?1", [id])?;
+    Ok(())
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -564,6 +643,52 @@ mod tests {
 
     fn setup() -> Connection {
         db::init_memory().unwrap()
+    }
+
+    #[test]
+    fn test_attachment_crud_and_count() {
+        let conn = setup();
+        let new = NewItem {
+            title: "Task with print".to_string(),
+            body: None,
+            context_id: None,
+            kind: "task".to_string(),
+            status: "inbox".to_string(),
+            waiting_on: None,
+            followup_at: None,
+            due_at: None,
+            ticket_ref: None,
+            url: None,
+            source: "manual".to_string(),
+            origin_app: None,
+            tags: vec![],
+        };
+        let item = insert_item(&conn, &new).unwrap();
+        assert_eq!(item.attachment_count, 0);
+
+        let att = add_attachment(
+            &conn,
+            &item.id,
+            Some("screenshot.png"),
+            "image/png",
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        )
+        .unwrap();
+        assert_eq!(att.item_id, item.id);
+
+        let list = get_item_attachments(&conn, &item.id).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].mime_type, "image/png");
+
+        let fetched = get_item_by_id(&conn, &item.id).unwrap();
+        assert_eq!(fetched.attachment_count, 1);
+
+        delete_attachment(&conn, &att.id).unwrap();
+        let list_after = get_item_attachments(&conn, &item.id).unwrap();
+        assert_eq!(list_after.len(), 0);
+
+        let fetched_after = get_item_by_id(&conn, &item.id).unwrap();
+        assert_eq!(fetched_after.attachment_count, 0);
     }
 
     #[test]

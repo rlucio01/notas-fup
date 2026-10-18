@@ -100,6 +100,14 @@ export const Review: React.FC = () => {
                 #{t}
               </span>
             ))}
+            {item.attachment_count !== undefined && item.attachment_count > 0 && (
+              <span
+                className="badge badge-attachment"
+                title={`${item.attachment_count} print(s) anexado(s)`}
+              >
+                Print ({item.attachment_count})
+              </span>
+            )}
           </div>
           {item.body && <div className="item-body">{item.body}</div>}
         </div>

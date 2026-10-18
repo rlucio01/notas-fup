@@ -135,6 +135,19 @@ fn migrate_v1(conn: &Connection) -> Result<()> {
             INSERT INTO items_fts(rowid, title, body, waiting_on, ticket_ref)
             VALUES (NEW.rowid, NEW.title, NEW.body, NEW.waiting_on, NEW.ticket_ref);
         END;
+
+        -- Attachments / Screenshots (Prints)
+        CREATE TABLE IF NOT EXISTS attachments (
+            id         TEXT PRIMARY KEY,
+            item_id    TEXT NOT NULL,
+            filename   TEXT,
+            mime_type  TEXT NOT NULL,
+            data       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_attachments_item ON attachments(item_id);
         ",
     )?;
 

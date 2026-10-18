@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { updateItem, createContext } from "./commands";
-import type { Item, Context, ItemStatus } from "./types";
+import { updateItem, createContext, getItemAttachments, addAttachment, deleteAttachment } from "./commands";
+import type { Item, Context, ItemStatus, Attachment } from "./types";
 
 interface EditModalProps {
   item: Item;
@@ -28,20 +28,105 @@ export const EditModal: React.FC<EditModalProps> = ({
   const [followupAt, setFollowupAt] = useState(item.followup_at?.substring(0, 10) || "");
   const [ticketRef, setTicketRef] = useState(item.ticket_ref || "");
   const [url, setUrl] = useState(item.url || "");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Load existing attachments on mount
+  useEffect(() => {
+    getItemAttachments(item.id)
+      .then(setAttachments)
+      .catch((err) => console.error("Erro ao carregar anexos:", err));
+  }, [item.id]);
+
+  // Listen for paste (Ctrl+V) anywhere in modal for images/prints
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      const clipItems = e.clipboardData?.items;
+      if (!clipItems) return;
+
+      for (let i = 0; i < clipItems.length; i++) {
+        const clip = clipItems[i];
+        if (clip.type.indexOf("image") !== -1) {
+          const file = clip.getAsFile();
+          if (!file) continue;
+
+          const reader = new FileReader();
+          reader.onload = async (evt) => {
+            const dataUrl = evt.target?.result as string;
+            if (dataUrl) {
+              try {
+                const created = await addAttachment(
+                  item.id,
+                  dataUrl,
+                  file.type || "image/png",
+                  `print_${Date.now()}.png`
+                );
+                setAttachments((prev) => [...prev, created]);
+              } catch (err) {
+                console.error("Erro ao salvar print anexado:", err);
+              }
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [item.id]);
 
   // Close on Escape, save on Ctrl+Enter
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose();
+        if (lightboxImage) {
+          setLightboxImage(null);
+        } else {
+          onClose();
+        }
       } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         handleSave();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [title, body, contextId, tags, status, waitingOn, dueAt, followupAt, ticketRef, url, newContextName, isCreatingContext]);
+  }, [title, body, contextId, tags, status, waitingOn, dueAt, followupAt, ticketRef, url, newContextName, isCreatingContext, lightboxImage]);
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const dataUrl = evt.target?.result as string;
+      if (dataUrl) {
+        try {
+          const created = await addAttachment(
+            item.id,
+            dataUrl,
+            file.type || "image/png",
+            file.name || `print_${Date.now()}.png`
+          );
+          setAttachments((prev) => [...prev, created]);
+        } catch (err) {
+          console.error("Erro ao anexar arquivo:", err);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleDeleteAttachment = async (attId: string) => {
+    try {
+      await deleteAttachment(attId, item.id);
+      setAttachments((prev) => prev.filter((a) => a.id !== attId));
+    } catch (err) {
+      console.error("Erro ao excluir print:", err);
+    }
+  };
 
   const handleAddTag = () => {
     const clean = tagInput.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "");
@@ -326,6 +411,57 @@ export const EditModal: React.FC<EditModalProps> = ({
               placeholder="Anotações adicionais, histórico, comandos ou checklists..."
             />
           </div>
+
+          {/* Prints e Capturas de Tela */}
+          <div className="form-group">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <label className="form-label">
+                Prints e Anotações Visuais ({attachments.length})
+              </label>
+              <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer", margin: 0 }}>
+                + Anexar Imagem
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handleFileInput}
+                />
+              </label>
+            </div>
+
+            <div className="attachment-dropzone">
+              {attachments.length === 0 ? (
+                <div className="attachment-hint">
+                  Tire um print com <span className="kbd-badge">Win + Shift + S</span> ou <span className="kbd-badge">PrtScn</span> e pressione <span className="kbd-badge">Ctrl + V</span> aqui para colar diretamente.
+                </div>
+              ) : (
+                <div className="attachment-grid">
+                  {attachments.map((att) => (
+                    <div key={att.id} className="attachment-card">
+                      <img
+                        src={att.data}
+                        alt={att.filename || "print"}
+                        className="attachment-thumb"
+                        onClick={() => setLightboxImage(att.data)}
+                        title="Clique para ampliar em tela cheia"
+                      />
+                      <button
+                        type="button"
+                        className="attachment-delete-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteAttachment(att.id);
+                        }}
+                        title="Excluir print"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="modal-footer">
@@ -358,6 +494,25 @@ export const EditModal: React.FC<EditModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Lightbox / Zoom do Print */}
+      {lightboxImage && (
+        <div className="lightbox-overlay" onClick={() => setLightboxImage(null)}>
+          <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <img src={lightboxImage} alt="Print ampliado" className="lightbox-image" />
+            <button
+              type="button"
+              className="lightbox-close-btn"
+              onClick={() => setLightboxImage(null)}
+              title="Fechar (Esc)"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export default EditModal;

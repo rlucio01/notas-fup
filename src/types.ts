@@ -30,9 +30,19 @@ export interface Item {
   source: string;
   origin_app: string | null;
   tags?: string[];
+  attachment_count?: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+}
+
+export interface Attachment {
+  id: string;
+  item_id: string;
+  filename: string | null;
+  mime_type: string;
+  data: string;
+  created_at: string;
 }
 
 export interface ProposedItem {

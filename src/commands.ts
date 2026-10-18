@@ -100,3 +100,27 @@ export async function openMainWindow(): Promise<void> {
 export async function closeMainWindow(): Promise<void> {
   await invoke("close_main_window_cmd");
 }
+
+export async function addAttachment(
+  itemId: string,
+  data: string,
+  mimeType: string = "image/png",
+  filename?: string
+): Promise<import("./types").Attachment> {
+  const json = await invoke<string>("add_attachment", {
+    itemId,
+    filename: filename ?? null,
+    mimeType,
+    data,
+  });
+  return JSON.parse(json);
+}
+
+export async function getItemAttachments(itemId: string): Promise<import("./types").Attachment[]> {
+  const json = await invoke<string>("get_item_attachments", { itemId });
+  return JSON.parse(json);
+}
+
+export async function deleteAttachment(id: string, itemId?: string): Promise<void> {
+  await invoke("delete_attachment", { id, itemId: itemId ?? null });
+}

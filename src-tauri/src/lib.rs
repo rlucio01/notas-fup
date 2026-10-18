@@ -110,6 +110,47 @@ fn create_context(
 }
 
 #[tauri::command]
+fn add_attachment(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    item_id: String,
+    filename: Option<String>,
+    mime_type: String,
+    data: String,
+) -> Result<String, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let attachment = db::queries::add_attachment(&conn, &item_id, filename.as_deref(), &mime_type, &data)
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("item-updated", &item_id);
+    serde_json::to_string(&attachment).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_item_attachments(
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    item_id: String,
+) -> Result<String, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let list = db::queries::get_item_attachments(&conn, &item_id).map_err(|e| e.to_string())?;
+    serde_json::to_string(&list).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_attachment(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    id: String,
+    item_id: Option<String>,
+) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    db::queries::delete_attachment(&conn, &id).map_err(|e| e.to_string())?;
+    if let Some(ref iid) = item_id {
+        let _ = app.emit("item-updated", iid);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn get_done_items(
     state: tauri::State<'_, Mutex<rusqlite::Connection>>,
 ) -> Result<String, String> {
@@ -278,6 +319,9 @@ pub fn run() {
             open_main_window_cmd,
             close_main_window_cmd,
             get_active_app,
+            add_attachment,
+            get_item_attachments,
+            delete_attachment,
         ])
         .setup(|app| {
             // 1. Initialize SQLite database
