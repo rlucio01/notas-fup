@@ -32,6 +32,9 @@ export interface Item {
   tags?: string[];
   attachment_count?: number;
   position?: number;
+  parent_id?: string | null;
+  subtask_count?: number;
+  subtask_done_count?: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

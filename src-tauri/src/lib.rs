@@ -337,6 +337,7 @@ fn save_capture(
         source: "capture".to_string(),
         origin_app,
         tags: parsed.tags,
+        parent_id: None,
     };
 
     let item = db::queries::insert_item(&conn, &new_item).map_err(|e| e.to_string())?;

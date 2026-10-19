@@ -29,7 +29,12 @@ export async function getTodayItems(): Promise<Item[]> {
   const res = await fetch(getApiUrl("/api/items"), { headers: getApiHeaders() });
   if (!res.ok) throw new Error("Falha ao obter itens da nuvem");
   const items: Item[] = await res.json();
-  return items.filter((i) => i.status !== "done" && i.status !== "dropped");
+  const activeParentIds = new Set(
+    items.filter((i) => !i.parent_id && i.status !== "done" && i.status !== "dropped").map((i) => i.id)
+  );
+  return items.filter(
+    (i) => (i.status !== "done" && i.status !== "dropped") || (i.parent_id && activeParentIds.has(i.parent_id))
+  );
 }
 
 export async function getInboxItems(): Promise<Item[]> {
@@ -40,7 +45,7 @@ export async function getInboxItems(): Promise<Item[]> {
   const res = await fetch(getApiUrl("/api/items"), { headers: getApiHeaders() });
   if (!res.ok) throw new Error("Falha ao obter inbox da nuvem");
   const items: Item[] = await res.json();
-  return items.filter((i) => i.status === "inbox");
+  return items.filter((i) => i.status === "inbox" && !i.parent_id);
 }
 
 export async function getDoneItems(): Promise<Item[]> {
@@ -51,7 +56,7 @@ export async function getDoneItems(): Promise<Item[]> {
   const res = await fetch(getApiUrl("/api/items"), { headers: getApiHeaders() });
   if (!res.ok) throw new Error("Falha ao obter concluídos da nuvem");
   const items: Item[] = await res.json();
-  return items.filter((i) => i.status === "done" || i.status === "dropped");
+  return items.filter((i) => (i.status === "done" || i.status === "dropped") && !i.parent_id);
 }
 
 export async function getReviewItems(staleDays: number = 5): Promise<Item[]> {
@@ -156,6 +161,7 @@ export async function updateItem(update: {
   ticket_ref?: string | null;
   url?: string | null;
   tags?: string[];
+  parent_id?: string | null;
 }): Promise<Item> {
   if (isTauri()) {
     const json = await invoke<string>("update_item", { itemJson: JSON.stringify(update) });

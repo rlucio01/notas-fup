@@ -2,7 +2,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 
 /// Current schema version. Bump this when adding new migrations.
-const CURRENT_VERSION: i64 = 3;
+const CURRENT_VERSION: i64 = 4;
 
 /// Run all pending migrations in order.
 pub fn run_all(conn: &Connection) -> Result<()> {
@@ -29,6 +29,9 @@ pub fn run_all(conn: &Connection) -> Result<()> {
     }
     if version < 3 {
         migrate_v3(conn)?;
+    }
+    if version < 4 {
+        migrate_v4(conn)?;
     }
 
     // Update version marker.
@@ -87,11 +90,14 @@ fn migrate_v1(conn: &Connection) -> Result<()> {
             updated_at   TEXT NOT NULL,
             deleted_at   TEXT,
             position     REAL NOT NULL DEFAULT 0.0,
-            FOREIGN KEY (context_id) REFERENCES contexts(id)
+            parent_id    TEXT,
+            FOREIGN KEY (context_id) REFERENCES contexts(id),
+            FOREIGN KEY (parent_id) REFERENCES items(id) ON DELETE SET NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
         CREATE INDEX IF NOT EXISTS idx_items_context ON items(context_id);
+        CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id);
         CREATE INDEX IF NOT EXISTS idx_items_followup ON items(followup_at);
         CREATE INDEX IF NOT EXISTS idx_items_due ON items(due_at);
         CREATE INDEX IF NOT EXISTS idx_items_waiting ON items(waiting_on);
@@ -206,6 +212,30 @@ fn migrate_v3(conn: &Connection) -> Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_attachments_item ON attachments(item_id);",
+    )?;
+
+    Ok(())
+}
+
+fn migrate_v4(conn: &Connection) -> Result<()> {
+    let has_parent_id: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('items') WHERE name = 'parent_id'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_parent_id {
+        conn.execute(
+            "ALTER TABLE items ADD COLUMN parent_id TEXT REFERENCES items(id) ON DELETE SET NULL",
+            [],
+        )?;
+    }
+
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id);",
     )?;
 
     Ok(())

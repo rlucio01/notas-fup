@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   updateItem,
+  createItem,
   createContext,
   getItemAttachments,
   addAttachment,
@@ -83,8 +84,10 @@ const handleDownloadAttachment = (att: Attachment) => {
 interface DetailPaneProps {
   item: Item | null;
   contexts: Context[];
+  allItems?: Item[];
   onClose: () => void;
   onUpdated: () => void;
+  onSelectItem?: (item: Item) => void;
   onToggleDone?: (item: Item) => void;
   onOpenFullEdit?: (item: Item) => void;
 }
@@ -92,14 +95,18 @@ interface DetailPaneProps {
 export const DetailPane: React.FC<DetailPaneProps> = ({
   item,
   contexts,
+  allItems = [],
   onClose,
   onUpdated,
+  onSelectItem,
   onToggleDone,
 }) => {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [status, setStatus] = useState<ItemStatus>("open");
   const [contextId, setContextId] = useState<string | null>(null);
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isCreatingContext, setIsCreatingContext] = useState(false);
   const [newContextName, setNewContextName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -130,6 +137,8 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
       setBody(item.body || "");
       setStatus(item.status || "open");
       setContextId(item.context_id || null);
+      setParentId(item.parent_id || null);
+      setNewSubtaskTitle("");
       setIsCreatingContext(false);
       setNewContextName("");
       setTags(item.tags || []);
@@ -148,6 +157,69 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
         .catch((err) => console.error("Erro ao carregar anexos:", err));
     }
   }, [item?.id]);
+
+  // Subtasks derived data
+  const subtasks = useMemo(() => {
+    if (!item) return [];
+    return allItems.filter((i) => i.parent_id === item.id && !i.deleted_at);
+  }, [allItems, item?.id]);
+
+  const subtasksDoneCount = useMemo(() => {
+    return subtasks.filter((s) => s.status === "done").length;
+  }, [subtasks]);
+
+  const parentItem = useMemo(() => {
+    if (!parentId) return null;
+    return allItems.find((i) => i.id === parentId) || null;
+  }, [allItems, parentId]);
+
+  const candidateParents = useMemo(() => {
+    if (!item) return [];
+    return allItems.filter(
+      (i) => i.id !== item.id && !i.parent_id && i.status !== "done" && i.status !== "dropped"
+    );
+  }, [allItems, item?.id]);
+
+  const handleToggleSubtask = async (st: Item) => {
+    const nextStatus: ItemStatus = st.status === "done" ? "open" : "done";
+    await updateItem({ id: st.id, status: nextStatus });
+    onUpdated();
+  };
+
+  const handleUnlinkSubtask = async (subtaskId: string) => {
+    await updateItem({ id: subtaskId, parent_id: null });
+    onUpdated();
+  };
+
+  const handleUnlinkParent = async () => {
+    if (!item) return;
+    setParentId(null);
+    setIsDirty(true);
+    await updateItem({ id: item.id, parent_id: null });
+    onUpdated();
+  };
+
+  const handleLinkToParent = async (targetParentId: string) => {
+    if (!item) return;
+    setParentId(targetParentId);
+    setIsDirty(true);
+    await updateItem({ id: item.id, parent_id: targetParentId });
+    onUpdated();
+  };
+
+  const handleAddSubtask = async () => {
+    if (!item || !newSubtaskTitle.trim()) return;
+    const taskTitle = newSubtaskTitle.trim();
+    setNewSubtaskTitle("");
+    await createItem({
+      title: taskTitle,
+      parent_id: item.id,
+      context_id: item.context_id,
+      status: "open",
+      kind: "task",
+    });
+    onUpdated();
+  };
 
   const bodyAutocomplete = useAutocomplete(
     body,
@@ -370,6 +442,7 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
         waiting_on: waitingOn.trim() || null,
         ticket_ref: ticketRef.trim() || null,
         url: url.trim() || null,
+        parent_id: parentId,
       });
 
       setIsDirty(false);
@@ -387,6 +460,7 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
     body,
     status,
     contextId,
+    parentId,
     isCreatingContext,
     newContextName,
     tags,
@@ -835,6 +909,125 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
               </div>
             )}
           </div>
+        </div>
+
+        {/* Seção de Subtarefas & Associação */}
+        <div className="detail-section detail-subtasks-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <label className="detail-label" style={{ margin: 0, fontWeight: 600 }}>
+              Subtarefas {subtasks.length > 0 && `(${subtasksDoneCount}/${subtasks.length})`}
+            </label>
+            {subtasks.length > 0 && (
+              <span className="badge badge-today" style={{ fontSize: "11px" }}>
+                {Math.round((subtasksDoneCount / subtasks.length) * 100)}% concluído
+              </span>
+            )}
+          </div>
+
+          {/* Se este item for uma subtarefa de outro item */}
+          {parentItem && (
+            <div className="subtask-parent-banner">
+              <span className="subtask-parent-label">Subtarefa de:</span>
+              <button
+                type="button"
+                className="subtask-parent-title"
+                onClick={() => onSelectItem?.(parentItem)}
+                title="Abrir tarefa pai no painel"
+              >
+                {parentItem.title}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleUnlinkParent}
+                title="Desvincular e tornar tarefa principal independente"
+              >
+                Desvincular
+              </button>
+            </div>
+          )}
+
+          {/* Lista de subtarefas pertencentes a este item */}
+          {subtasks.length > 0 && (
+            <div className="detail-subtasks-list">
+              {subtasks.map((st) => (
+                <div key={st.id} className="detail-subtask-row">
+                  <input
+                    type="checkbox"
+                    className="item-checkbox"
+                    checked={st.status === "done"}
+                    onChange={() => handleToggleSubtask(st)}
+                    title={st.status === "done" ? "Marcar como pendente" : "Marcar como concluída"}
+                  />
+                  <span
+                    className={`detail-subtask-title ${st.status === "done" ? "done" : ""}`}
+                    onClick={() => onSelectItem?.(st)}
+                    title="Clique para abrir detalhes desta subtarefa"
+                  >
+                    {st.title}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-subtask-unlink"
+                    onClick={() => handleUnlinkSubtask(st.id)}
+                    title="Desvincular (tornar tarefa principal)"
+                  >
+                    Desvincular
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Adicionar nova subtarefa rapidamente */}
+          {!parentId && (
+            <form
+              className="detail-add-subtask-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAddSubtask();
+              }}
+            >
+              <input
+                type="text"
+                className="detail-prop-input"
+                style={{ flex: 1 }}
+                placeholder="+ Adicionar subtarefa... (Enter)"
+                value={newSubtaskTitle}
+                onChange={(e) => setNewSubtaskTitle(e.target.value)}
+              />
+              {newSubtaskTitle.trim() && (
+                <button type="submit" className="btn btn-primary btn-sm">
+                  Adicionar
+                </button>
+              )}
+            </form>
+          )}
+
+          {/* Seletor para transformar este item em subtarefa de outro item existente */}
+          {!parentId && subtasks.length === 0 && candidateParents.length > 0 && (
+            <div className="detail-nest-selector">
+              <span className="detail-nest-label">
+                Mover para dentro de outra tarefa:
+              </span>
+              <select
+                className="detail-prop-select"
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handleLinkToParent(e.target.value);
+                  }
+                }}
+              >
+                <option value="">(Selecionar tarefa pai...)</option>
+                {candidateParents.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title.length > 36 ? p.title.substring(0, 33) + "..." : p.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Corpo / Anotações e Checklists */}

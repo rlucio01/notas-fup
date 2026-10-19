@@ -21,6 +21,7 @@ import {
   PaperclipIcon,
   ChevronUpIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   ClockIcon,
   UserIcon,
   InboxIcon,
@@ -28,7 +29,7 @@ import {
   LayoutGridIcon,
   ListIcon,
 } from "./Icons";
-import type { Item, Context, FollowupAlerts } from "./types";
+import type { Item, Context, FollowupAlerts, ItemStatus } from "./types";
 
 interface TodayProps {
   onNavigateToInbox: () => void;
@@ -55,6 +56,10 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dragSection, setDragSection] = useState<"executing" | "today" | "overdue" | null>(null);
+  // Drop target for nesting as a subtask
+  const [dragOverSubtaskId, setDragOverSubtaskId] = useState<string | null>(null);
+  // Expand/collapse tracking for subtask trees
+  const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   // Itens sendo concluídos com animação incandescente de queima
   const [burningItemIds, setBurningItemIds] = useState<Set<string>>(new Set());
 
@@ -224,6 +229,65 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     return Object.values(blocks.waiting).reduce((sum, list) => sum + list.length, 0);
   }, [blocks.waiting]);
 
+  // Index subtasks by parent_id
+  const subtasksByParent = useMemo(() => {
+    const map = new Map<string, Item[]>();
+    for (const it of allItems) {
+      if (it.parent_id) {
+        const list = map.get(it.parent_id) || [];
+        list.push(it);
+        map.set(it.parent_id, list);
+      }
+    }
+    return map;
+  }, [allItems]);
+
+  const handleNestSubtask = async (childId: string, parentId: string) => {
+    if (!childId || !parentId || childId === parentId) return;
+    setAllItems((prev) =>
+      prev.map((i) => (i.id === childId ? { ...i, parent_id: parentId } : i))
+    );
+    setCollapsedParents((prev) => {
+      const next = new Set(prev);
+      next.delete(parentId); // Ensure parent is expanded
+      return next;
+    });
+    try {
+      await updateItem({ id: childId, parent_id: parentId });
+    } catch (err) {
+      console.error("Erro ao aninhar subtarefa:", err);
+    } finally {
+      loadData();
+    }
+  };
+
+  const handleUnnestSubtask = async (subtaskId: string) => {
+    setAllItems((prev) =>
+      prev.map((i) => (i.id === subtaskId ? { ...i, parent_id: null } : i))
+    );
+    try {
+      await updateItem({ id: subtaskId, parent_id: null });
+    } catch (err) {
+      console.error("Erro ao desvincular subtarefa:", err);
+    } finally {
+      loadData();
+    }
+  };
+
+  const handleToggleSubtask = async (subtask: Item) => {
+    const nextStatus: ItemStatus = subtask.status === "done" ? "open" : "done";
+    setAllItems((prev) =>
+      prev.map((i) => (i.id === subtask.id ? { ...i, status: nextStatus } : i))
+    );
+    try {
+      await updateItem({ id: subtask.id, status: nextStatus });
+    } catch (err) {
+      console.error("Erro ao alterar status da subtarefa:", err);
+    } finally {
+      loadData();
+    }
+  };
+
   const handleToggleDone = async (item: Item) => {
     // Se o item já estava concluído, reabre imediatamente
     if (item.status === "done") {
@@ -391,256 +455,382 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     const isDragOver = dragOverId === item.id && draggedId !== item.id;
     const isSelected = selectedDetailItem?.id === item.id;
 
+    const subtasks = subtasksByParent.get(item.id) || [];
+    const doneSubtasksCount = subtasks.filter((s) => s.status === "done").length;
+    const isExpanded = !collapsedParents.has(item.id);
+
     return (
-      <div
-        key={item.id}
-        className={`item-row ${isBeingDragged ? "is-dragging" : ""} ${
-          isDragOver ? "drag-over-top" : ""
-        } ${isSelected ? "selected" : ""} ${isBurning ? "item-burning" : ""}`}
-        draggable={isDraggable}
-        onDragStart={(e) => {
-          if (!isDraggable) return;
-          e.dataTransfer.setData("text/plain", item.id);
-          e.dataTransfer.setData("application/x-fup-id", item.id);
-          e.dataTransfer.effectAllowed = "move";
-          setDraggedId(item.id);
-          setDragSection(section || null);
-        }}
-        onDragOver={(e) => {
-          if (!isDraggable) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          if (draggedId && draggedId !== item.id && dragOverId !== item.id) {
-            setDragOverId(item.id);
-          }
-        }}
-        onDragEnter={(e) => {
-          if (!isDraggable) return;
-          e.preventDefault();
-          if (draggedId && draggedId !== item.id) {
-            setDragOverId(item.id);
-          }
-        }}
-        onDragLeave={(e) => {
-          if (e.currentTarget && !e.currentTarget.contains(e.relatedTarget as Node)) {
-            if (dragOverId === item.id) {
-              setDragOverId(null);
+      <div key={item.id} className="item-row-wrapper">
+        <div
+          className={`item-row ${isBeingDragged ? "is-dragging" : ""} ${
+            isDragOver ? "drag-over-top" : ""
+          } ${isSelected ? "selected" : ""} ${isBurning ? "item-burning" : ""}`}
+          draggable={isDraggable}
+          onDragStart={(e) => {
+            if (!isDraggable) return;
+            e.dataTransfer.setData("text/plain", item.id);
+            e.dataTransfer.setData("application/x-fup-id", item.id);
+            e.dataTransfer.effectAllowed = "move";
+            setDraggedId(item.id);
+            setDragSection(section || null);
+          }}
+          onDragOver={(e) => {
+            if (!isDraggable) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (draggedId && draggedId !== item.id && dragOverId !== item.id) {
+              setDragOverId(item.id);
             }
-          }
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (isDraggable && section) {
-            handleDrop(item.id, section, e);
-          }
-        }}
-        onDragEnd={() => {
-          setDraggedId(null);
-          setDragOverId(null);
-          setDragSection(null);
-        }}
-      >
-        {isDraggable && (
-          <span
-            className="drag-handle"
-            title="Arraste para definir a ordem de prioridade"
-            draggable={isDraggable}
-            onDragStart={(e) => {
-              e.stopPropagation();
-              e.dataTransfer.setData("text/plain", item.id);
-              e.dataTransfer.setData("application/x-fup-id", item.id);
-              e.dataTransfer.effectAllowed = "move";
-              setDraggedId(item.id);
-              setDragSection(section || null);
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GripIcon size={14} />
-          </span>
-        )}
+          }}
+          onDragEnter={(e) => {
+            if (!isDraggable) return;
+            e.preventDefault();
+            if (draggedId && draggedId !== item.id) {
+              setDragOverId(item.id);
+            }
+          }}
+          onDragLeave={(e) => {
+            if (e.currentTarget && !e.currentTarget.contains(e.relatedTarget as Node)) {
+              if (dragOverId === item.id) {
+                setDragOverId(null);
+              }
+            }
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (isDraggable && section) {
+              handleDrop(item.id, section, e);
+            }
+          }}
+          onDragEnd={() => {
+            setDraggedId(null);
+            setDragOverId(null);
+            setDragSection(null);
+          }}
+        >
+          {isDraggable && (
+            <span
+              className="drag-handle"
+              title="Arraste para definir a ordem de prioridade"
+              draggable={isDraggable}
+              onDragStart={(e) => {
+                e.stopPropagation();
+                e.dataTransfer.setData("text/plain", item.id);
+                e.dataTransfer.setData("application/x-fup-id", item.id);
+                e.dataTransfer.effectAllowed = "move";
+                setDraggedId(item.id);
+                setDragSection(section || null);
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripIcon size={14} />
+            </span>
+          )}
 
-        <div className="item-row-top">
-          <input
-            type="checkbox"
-            className="item-checkbox"
-            checked={isDone || isBurning}
-            onChange={() => handleToggleDone(item)}
-            title="Marcar como concluído"
-            disabled={isBurning}
-          />
+          <div className="item-row-top">
+            <input
+              type="checkbox"
+              className="item-checkbox"
+              checked={isDone || isBurning}
+              onChange={() => handleToggleDone(item)}
+              title="Marcar como concluído"
+              disabled={isBurning}
+            />
 
-          <div
-            className="item-main"
-            style={{ cursor: "pointer" }}
-            onClick={() => setSelectedDetailItem(item)}
-            title="Clique para inspecionar e editar no painel lateral"
-          >
-            <div className="item-title-row">
-              {priorityIndex !== undefined && (
-                <div className="priority-badge-group" onClick={(e) => e.stopPropagation()}>
-                  <span
-                    className={`badge badge-priority ${priorityIndex === 0 ? "top-focus" : ""}`}
-                    title={`Prioridade #${priorityIndex + 1}${
-                      priorityIndex === 0 ? " (Foco Principal)" : ""
-                    }`}
+            <div
+              className="item-main"
+              style={{ cursor: "pointer" }}
+              onClick={() => setSelectedDetailItem(item)}
+              title="Clique para inspecionar e editar no painel lateral"
+            >
+              <div className="item-title-row">
+                {subtasks.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-expand-subtasks"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCollapsedParents((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(item.id)) {
+                          next.delete(item.id);
+                        } else {
+                          next.add(item.id);
+                        }
+                        return next;
+                      });
+                    }}
+                    title={isExpanded ? "Recolher subtarefas" : "Expandir subtarefas"}
                   >
-                    #{priorityIndex + 1}
-                  </span>
+                    {isExpanded ? <ChevronDownIcon size={11} /> : <ChevronRightIcon size={11} />}
+                  </button>
+                )}
 
-                  <div className="priority-nudge-arrows">
-                    <button
-                      type="button"
-                      className="btn-priority-nudge"
-                      disabled={priorityIndex === 0}
-                      onClick={() => handleNudgePriority(item, "up")}
-                      title="Aumentar prioridade (mover para cima)"
+                {priorityIndex !== undefined && (
+                  <div className="priority-badge-group" onClick={(e) => e.stopPropagation()}>
+                    <span
+                      className={`badge badge-priority ${priorityIndex === 0 ? "top-focus" : ""}`}
+                      title={`Prioridade #${priorityIndex + 1}${
+                        priorityIndex === 0 ? " (Foco Principal)" : ""
+                      }`}
                     >
-                      <ChevronUpIcon size={10} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-priority-nudge"
-                      disabled={priorityIndex === blocks.executing.length - 1}
-                      onClick={() => handleNudgePriority(item, "down")}
-                      title="Diminuir prioridade (mover para baixo)"
-                    >
-                      <ChevronDownIcon size={10} />
-                    </button>
+                      #{priorityIndex + 1}
+                    </span>
+
+                    <div className="priority-nudge-arrows">
+                      <button
+                        type="button"
+                        className="btn-priority-nudge"
+                        disabled={priorityIndex === 0}
+                        onClick={() => handleNudgePriority(item, "up")}
+                        title="Aumentar prioridade (mover para cima)"
+                      >
+                        <ChevronUpIcon size={10} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-priority-nudge"
+                        disabled={priorityIndex === blocks.executing.length - 1}
+                        onClick={() => handleNudgePriority(item, "down")}
+                        title="Diminuir prioridade (mover para baixo)"
+                      >
+                        <ChevronDownIcon size={10} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-
-              <span className={`item-title ${isDone || isBurning ? "done" : ""}`}>
-                {item.title}
-              </span>
-            </div>
-
-            {Boolean(
-              showOverdueBadge ||
-                item.context_name ||
-                item.ticket_ref ||
-                item.waiting_on ||
-                dateLabel ||
-                (item.tags && item.tags.length > 0) ||
-                (item.attachment_count !== undefined && item.attachment_count > 0)
-            ) && (
-              <div className="item-badges-row">
-                {showOverdueBadge && (
-                  <span className="badge badge-overdue">Atrasado</span>
                 )}
 
-                {item.context_name && (
+                <span className={`item-title ${isDone || isBurning ? "done" : ""}`}>
+                  {item.title}
+                </span>
+
+                {subtasks.length > 0 && (
                   <span
-                    className="badge badge-context"
-                    style={{
-                      borderColor: item.context_color || undefined,
-                      cursor: "pointer",
-                    }}
+                    className="badge badge-subtasks-count"
+                    title={`${doneSubtasksCount} de ${subtasks.length} subtarefas concluídas`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedContext((prev) =>
-                        prev === item.context_name?.toLowerCase()
-                          ? "all"
-                          : (item.context_name?.toLowerCase() || "all")
-                      );
+                      setSelectedDetailItem(item);
                     }}
-                    title={`Clique para filtrar pelo contexto @${item.context_name}`}
                   >
-                    @{item.context_name}
-                  </span>
-                )}
-
-                {item.ticket_ref && (
-                  <span className="badge badge-ticket">{item.ticket_ref}</span>
-                )}
-
-                {item.waiting_on && (
-                  <span className="badge badge-waiting">~{item.waiting_on}</span>
-                )}
-
-                {dateLabel && (
-                  <span className="badge badge-today">
-                    {dateLabel.substring(0, 10)}
-                  </span>
-                )}
-
-                {item.tags?.map((t) => (
-                  <span
-                    key={t}
-                    className="badge badge-tag"
-                    style={{ cursor: "pointer" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedTag((prev) => (prev === t.toLowerCase() ? "all" : t.toLowerCase()));
-                    }}
-                    title={`Filtrar por #${t}`}
-                  >
-                    #{t}
-                  </span>
-                ))}
-
-                {item.attachment_count !== undefined && item.attachment_count > 0 && (
-                  <span
-                    className="badge badge-attachment"
-                    title={`${item.attachment_count} anexo(s)`}
-                  >
-                    <PaperclipIcon size={11} />
-                    {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
+                    {doneSubtasksCount}/{subtasks.length}
                   </span>
                 )}
               </div>
+
+              {Boolean(
+                showOverdueBadge ||
+                  item.context_name ||
+                  item.ticket_ref ||
+                  item.waiting_on ||
+                  dateLabel ||
+                  (item.tags && item.tags.length > 0) ||
+                  (item.attachment_count !== undefined && item.attachment_count > 0)
+              ) && (
+                <div className="item-badges-row">
+                  {showOverdueBadge && (
+                    <span className="badge badge-overdue">Atrasado</span>
+                  )}
+
+                  {item.context_name && (
+                    <span
+                      className="badge badge-context"
+                      style={{
+                        borderColor: item.context_color || undefined,
+                        cursor: "pointer",
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedContext((prev) =>
+                          prev === item.context_name?.toLowerCase()
+                            ? "all"
+                            : (item.context_name?.toLowerCase() || "all")
+                        );
+                      }}
+                      title={`Clique para filtrar pelo contexto @${item.context_name}`}
+                    >
+                      @{item.context_name}
+                    </span>
+                  )}
+
+                  {item.ticket_ref && (
+                    <span className="badge badge-ticket">{item.ticket_ref}</span>
+                  )}
+
+                  {item.waiting_on && (
+                    <span className="badge badge-waiting">~{item.waiting_on}</span>
+                  )}
+
+                  {dateLabel && (
+                    <span className="badge badge-today">
+                      {dateLabel.substring(0, 10)}
+                    </span>
+                  )}
+
+                  {item.tags?.map((t) => (
+                    <span
+                      key={t}
+                      className="badge badge-tag"
+                      style={{ cursor: "pointer" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTag((prev) => (prev === t.toLowerCase() ? "all" : t.toLowerCase()));
+                      }}
+                      title={`Filtrar por #${t}`}
+                    >
+                      #{t}
+                    </span>
+                  ))}
+
+                  {item.attachment_count !== undefined && item.attachment_count > 0 && (
+                    <span
+                      className="badge badge-attachment"
+                      title={`${item.attachment_count} anexo(s)`}
+                    >
+                      <PaperclipIcon size={11} />
+                      {item.attachment_count} {item.attachment_count === 1 ? "anexo" : "anexos"}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {item.body && <div className="item-body">{item.body}</div>}
+            </div>
+          </div>
+
+          <div className="item-actions">
+            {item.status === "open" && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleMoveToWaiting(item)}
+                title="Colocar demanda em espera de terceiros"
+              >
+                Aguardar...
+              </button>
             )}
 
-            {item.body && <div className="item-body">{item.body}</div>}
-          </div>
-        </div>
+            {item.status === "waiting" && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleResumeExecution(item)}
+                title="Retomar demanda para minha execução ativa"
+              >
+                Assumir / Executar
+              </button>
+            )}
 
-        <div className="item-actions">
-          {item.status === "open" && (
+            {item.url && (
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-secondary btn-sm btn-icon"
+                title={item.url}
+              >
+                <LinkIcon size={12} />
+                <span>Link</span>
+              </a>
+            )}
+
             <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => handleMoveToWaiting(item)}
-              title="Colocar demanda em espera de terceiros"
-            >
-              Aguardar...
-            </button>
-          )}
-
-          {item.status === "waiting" && (
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => handleResumeExecution(item)}
-              title="Retomar demanda para minha execução ativa"
-            >
-              Assumir / Executar
-            </button>
-          )}
-
-          {item.url && (
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noreferrer"
               className="btn btn-secondary btn-sm btn-icon"
-              title={item.url}
+              onClick={() => handlePostponeTomorrow(item)}
+              title="Adiar para amanhã (+1 dia)"
             >
-              <LinkIcon size={12} />
-              <span>Link</span>
-            </a>
-          )}
+              <CalendarIcon size={12} />
+              <span>+1 dia</span>
+            </button>
+          </div>
 
-          <button
-            className="btn btn-secondary btn-sm btn-icon"
-            onClick={() => handlePostponeTomorrow(item)}
-            title="Adiar para amanhã (+1 dia)"
-          >
-            <CalendarIcon size={12} />
-            <span>+1 dia</span>
-          </button>
+          {isBurning && <BurnOverlay />}
         </div>
 
-        {isBurning && <BurnOverlay />}
+        {/* Drop target para transformar a tarefa arrastada em subtarefa deste item */}
+        {draggedId && draggedId !== item.id && !item.parent_id && (
+          <div
+            className={`subtask-drop-target ${dragOverSubtaskId === item.id ? "active" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDragOverSubtaskId(item.id);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget && !e.currentTarget.contains(e.relatedTarget as Node)) {
+                setDragOverSubtaskId(null);
+              }
+            }}
+            onDrop={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setDragOverSubtaskId(null);
+              await handleNestSubtask(draggedId, item.id);
+            }}
+          >
+            <span>+ Soltar aqui para transformar em subtarefa de "{item.title}"</span>
+          </div>
+        )}
+
+        {/* Árvore de subtarefas aninhadas */}
+        {subtasks.length > 0 && isExpanded && (
+          <div className="subtasks-tree-container">
+            {subtasks.map((st) => {
+              const isStDone = st.status === "done";
+              return (
+                <div
+                  key={st.id}
+                  className={`subtask-tree-row ${selectedDetailItem?.id === st.id ? "selected" : ""}`}
+                  onClick={() => setSelectedDetailItem(st)}
+                  title="Clique para abrir detalhes no painel lateral"
+                >
+                  <span className="subtask-tree-branch" />
+                  <input
+                    type="checkbox"
+                    className="item-checkbox subtask-checkbox"
+                    checked={isStDone}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleToggleSubtask(st);
+                    }}
+                    title={isStDone ? "Reabrir subtarefa" : "Concluir subtarefa"}
+                  />
+                  <div className="subtask-tree-main">
+                    <span className={`subtask-tree-title ${isStDone ? "done" : ""}`}>
+                      {st.title}
+                    </span>
+                    {st.tags && st.tags.length > 0 && (
+                      <div className="subtask-badges-row">
+                        {st.tags.map((t) => (
+                          <span
+                            key={t}
+                            className="badge badge-tag badge-subtask-tag"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTag((prev) => (prev === t.toLowerCase() ? "all" : t.toLowerCase()));
+                            }}
+                          >
+                            #{t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm btn-subtask-unnest"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUnnestSubtask(st.id);
+                    }}
+                    title="Desvincular (tornar tarefa principal independente)"
+                  >
+                    Desvincular
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -651,6 +841,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     const isBurning = burningItemIds.has(item.id);
     const isSelected = selectedDetailItem?.id === item.id;
     const dateLabel = item.due_at || item.followup_at;
+    const subtasks = subtasksByParent.get(item.id) || [];
+    const doneSubtasksCount = subtasks.filter((s) => s.status === "done").length;
 
     return (
       <div
@@ -687,6 +879,15 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
               style={{ borderColor: item.context_color || undefined }}
             >
               @{item.context_name}
+            </span>
+          )}
+
+          {subtasks.length > 0 && (
+            <span
+              className="badge badge-subtasks-count"
+              title={`${doneSubtasksCount}/${subtasks.length} subtarefas concluídas`}
+            >
+              {doneSubtasksCount}/{subtasks.length} subtarefas
             </span>
           )}
 
@@ -1289,8 +1490,10 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         <DetailPane
           item={selectedDetailItem}
           contexts={contexts}
+          allItems={allItems}
           onClose={() => setSelectedDetailItem(null)}
           onUpdated={loadData}
+          onSelectItem={(item) => setSelectedDetailItem(item)}
           onToggleDone={handleToggleDone}
           onOpenFullEdit={(item) => {
             setEditingItem(item);

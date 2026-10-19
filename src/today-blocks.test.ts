@@ -69,4 +69,16 @@ describe("today-blocks", () => {
     expect(blocks.overdue.length).toBe(0);
     expect(blocks.today.length).toBe(0);
   });
+
+  it("excludes subtasks from top-level blocks", () => {
+    const items: Item[] = [
+      makeItem({ id: "parent-1", status: "open", title: "Tarefa Pai" }),
+      makeItem({ id: "sub-1", status: "open", parent_id: "parent-1", title: "Subtarefa 1" }),
+      makeItem({ id: "sub-2", status: "open", parent_id: "parent-1", title: "Subtarefa 2" }),
+    ];
+
+    const blocks = computeTodayBlocks(items, todayStr);
+    expect(blocks.executing.length).toBe(1);
+    expect(blocks.executing[0].id).toBe("parent-1");
+  });
 });

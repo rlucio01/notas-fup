@@ -38,6 +38,12 @@ pub struct Item {
     pub attachment_count: i64,
     #[serde(default)]
     pub position: f64,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub subtask_count: i64,
+    #[serde(default)]
+    pub subtask_done_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,7 +62,10 @@ pub const ITEM_SELECT_COLS: &str = "i.id, i.context_id, i.kind, i.title, i.body,
         i.deleted_at, c.name, c.color,
         (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id),
         (SELECT COUNT(*) FROM attachments a WHERE a.item_id = i.id),
-        i.position";
+        i.position,
+        i.parent_id,
+        (SELECT COUNT(*) FROM items s WHERE s.parent_id = i.id AND s.deleted_at IS NULL),
+        (SELECT COUNT(*) FROM items s WHERE s.parent_id = i.id AND s.status = 'done' AND s.deleted_at IS NULL)";
 
 pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
     let tags_csv: Option<String> = row.get(19)?;
@@ -70,6 +79,9 @@ pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
     };
     let attachment_count: i64 = row.get(20).unwrap_or(0);
     let position: f64 = row.get(21).unwrap_or(0.0);
+    let parent_id: Option<String> = row.get(22).unwrap_or(None);
+    let subtask_count: i64 = row.get(23).unwrap_or(0);
+    let subtask_done_count: i64 = row.get(24).unwrap_or(0);
 
     Ok(Item {
         id: row.get(0)?,
@@ -94,6 +106,9 @@ pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
         tags,
         attachment_count,
         position,
+        parent_id,
+        subtask_count,
+        subtask_done_count,
     })
 }
 
@@ -173,6 +188,8 @@ pub struct NewItem {
     pub origin_app: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub parent_id: Option<String>,
 }
 
 fn default_kind() -> String {
@@ -210,19 +227,27 @@ pub struct UpdateItem {
     pub url: Option<Option<String>>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub parent_id: Option<Option<String>>,
 }
 
 // ── Today items ─────────────────────────────────────────────────────────
 
 /// Items for the Today/Execution screen: all active open tasks to be executed,
-/// overdue, waiting items, and inbox items. Excludes done/dropped and soft-deleted.
+/// overdue, waiting items, and inbox items. Excludes done/dropped and soft-deleted,
+/// but includes subtasks of active parent items so their completion can be displayed.
 pub fn get_today_items(conn: &Connection) -> Result<Vec<Item>> {
     let sql = format!(
         "SELECT {ITEM_SELECT_COLS}
          FROM items i
          LEFT JOIN contexts c ON i.context_id = c.id
          WHERE i.deleted_at IS NULL
-           AND i.status NOT IN ('done', 'dropped')
+           AND (
+             i.status NOT IN ('done', 'dropped')
+             OR (i.parent_id IS NOT NULL AND i.parent_id IN (
+                 SELECT p.id FROM items p WHERE p.deleted_at IS NULL AND p.status NOT IN ('done', 'dropped')
+             ))
+           )
          ORDER BY
            CASE
              WHEN i.status = 'open' THEN 0
@@ -329,8 +354,8 @@ pub fn insert_item(conn: &Connection, new: &NewItem) -> Result<Item> {
     conn.execute(
         "INSERT INTO items (id, context_id, kind, title, body, status, waiting_on,
          followup_at, due_at, ticket_ref, url, done_at, source, origin_app,
-         created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+         created_at, updated_at, parent_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         params![
             &id,
             &new.context_id,
@@ -348,6 +373,7 @@ pub fn insert_item(conn: &Connection, new: &NewItem) -> Result<Item> {
             &new.origin_app,
             &now,
             &now,
+            &new.parent_id,
         ],
     )?;
 
@@ -392,6 +418,9 @@ pub fn insert_item(conn: &Connection, new: &NewItem) -> Result<Item> {
         tags: new.tags.clone(),
         attachment_count: 0,
         position: 0.0,
+        parent_id: new.parent_id.clone(),
+        subtask_count: 0,
+        subtask_done_count: 0,
     })
 }
 
@@ -402,8 +431,8 @@ pub fn upsert_remote_items(conn: &Connection, items: &[Item]) -> Result<usize> {
             "INSERT INTO items (
                 id, context_id, kind, title, body, status, waiting_on,
                 followup_at, due_at, ticket_ref, url, done_at, source,
-                origin_app, position, created_at, updated_at, deleted_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+                origin_app, position, created_at, updated_at, deleted_at, parent_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
              ON CONFLICT(id) DO UPDATE SET
                 context_id = excluded.context_id,
                 kind = excluded.kind,
@@ -418,7 +447,8 @@ pub fn upsert_remote_items(conn: &Connection, items: &[Item]) -> Result<usize> {
                 done_at = excluded.done_at,
                 position = excluded.position,
                 updated_at = excluded.updated_at,
-                deleted_at = excluded.deleted_at
+                deleted_at = excluded.deleted_at,
+                parent_id = excluded.parent_id
              WHERE excluded.updated_at >= items.updated_at",
             params![
                 &item.id,
@@ -439,6 +469,7 @@ pub fn upsert_remote_items(conn: &Connection, items: &[Item]) -> Result<usize> {
                 &item.created_at,
                 &item.updated_at,
                 &item.deleted_at,
+                &item.parent_id,
             ],
         )?;
         if rows > 0 {
@@ -651,6 +682,7 @@ pub fn update_item(conn: &Connection, update: &UpdateItem) -> Result<Item> {
     set_option_field!(due_at, "due_at");
     set_option_field!(ticket_ref, "ticket_ref");
     set_option_field!(url, "url");
+    set_option_field!(parent_id, "parent_id");
 
     // Handle status with done_at side-effect
     if let Some(ref status) = update.status {
@@ -839,6 +871,7 @@ pub fn import_proposed_items(conn: &Connection, proposed: &[ProposedItem]) -> Re
             source: "import".to_string(),
             origin_app: None,
             tags: p.tags.clone(),
+            parent_id: None,
         };
         let item = insert_item(conn, &new)?;
         imported.push(item);
@@ -1009,6 +1042,7 @@ mod tests {
                 source: "manual".to_string(),
                 origin_app: None,
                 tags: vec![],
+                parent_id: None,
             },
         )
         .unwrap();
@@ -1029,6 +1063,7 @@ mod tests {
                 source: "manual".to_string(),
                 origin_app: None,
                 tags: vec![],
+                parent_id: None,
             },
         )
         .unwrap();
@@ -1059,6 +1094,7 @@ mod tests {
             source: "manual".to_string(),
             origin_app: None,
             tags: vec![],
+            parent_id: None,
         };
         let item = insert_item(&conn, &new).unwrap();
         assert_eq!(item.attachment_count, 0);
@@ -1105,6 +1141,7 @@ mod tests {
             source: "manual".to_string(),
             origin_app: None,
             tags: vec![],
+            parent_id: None,
         };
         let item = insert_item(&conn, &new).unwrap();
         assert_eq!(item.title, "Test item");
@@ -1133,6 +1170,7 @@ mod tests {
             source: "capture".to_string(),
             origin_app: None,
             tags: vec![],
+            parent_id: None,
         };
         let item = insert_item(&conn, &new).unwrap();
         // Item with context auto-upgrades from inbox to open
@@ -1156,6 +1194,7 @@ mod tests {
             source: "manual".to_string(),
             origin_app: None,
             tags: vec!["finops".to_string(), "cloud".to_string()],
+            parent_id: None,
         };
         let item = insert_item(&conn, &new).unwrap();
 
@@ -1187,6 +1226,7 @@ mod tests {
             ticket_ref: None,
             url: None,
             tags: Some(vec!["nova_tag".to_string()]),
+            parent_id: None,
         };
         let updated = update_item(&conn, &update).unwrap();
         assert_eq!(updated.tags, vec!["nova_tag".to_string()]);
@@ -1209,6 +1249,7 @@ mod tests {
             source: "manual".to_string(),
             origin_app: None,
             tags: vec![],
+            parent_id: None,
         };
         let item = insert_item(&conn, &new).unwrap();
 
@@ -1225,6 +1266,7 @@ mod tests {
             ticket_ref: None,
             url: None,
             tags: None,
+            parent_id: None,
         };
         let updated = update_item(&conn, &update).unwrap();
         assert_eq!(updated.status, "done");
@@ -1248,6 +1290,7 @@ mod tests {
             source: "manual".to_string(),
             origin_app: None,
             tags: vec![],
+            parent_id: None,
         };
         insert_item(&conn, &new).unwrap();
 
@@ -1300,6 +1343,7 @@ mod tests {
             source: "manual".to_string(),
             origin_app: None,
             tags: vec![],
+            parent_id: None,
         };
         let item = insert_item(&conn, &new).unwrap();
         let update = UpdateItem {
@@ -1315,12 +1359,156 @@ mod tests {
             ticket_ref: None,
             url: None,
             tags: None,
+            parent_id: None,
         };
         update_item(&conn, &update).unwrap();
 
         let done = get_done_items(&conn).unwrap();
         assert_eq!(done.len(), 1);
         assert_eq!(done[0].status, "done");
+    }
+
+    #[test]
+    fn test_subtasks_nesting_and_counts() {
+        let conn = setup();
+        // Create parent task
+        let parent = insert_item(
+            &conn,
+            &NewItem {
+                title: "Parent task".to_string(),
+                body: None,
+                context_id: None,
+                kind: "task".to_string(),
+                status: "open".to_string(),
+                waiting_on: None,
+                followup_at: None,
+                due_at: None,
+                ticket_ref: None,
+                url: None,
+                source: "manual".to_string(),
+                origin_app: None,
+                tags: vec![],
+                parent_id: None,
+            },
+        )
+        .unwrap();
+
+        // Create independent task
+        let sub1 = insert_item(
+            &conn,
+            &NewItem {
+                title: "Subtask 1".to_string(),
+                body: None,
+                context_id: None,
+                kind: "task".to_string(),
+                status: "open".to_string(),
+                waiting_on: None,
+                followup_at: None,
+                due_at: None,
+                ticket_ref: None,
+                url: None,
+                source: "manual".to_string(),
+                origin_app: None,
+                tags: vec![],
+                parent_id: None,
+            },
+        )
+        .unwrap();
+
+        // Nest sub1 into parent
+        let update = UpdateItem {
+            id: sub1.id.clone(),
+            parent_id: Some(Some(parent.id.clone())),
+            context_id: None,
+            kind: None,
+            title: None,
+            body: None,
+            status: None,
+            waiting_on: None,
+            followup_at: None,
+            due_at: None,
+            ticket_ref: None,
+            url: None,
+            tags: None,
+        };
+        update_item(&conn, &update).unwrap();
+
+        // Create directly nested sub2
+        let sub2 = insert_item(
+            &conn,
+            &NewItem {
+                title: "Subtask 2".to_string(),
+                body: None,
+                context_id: None,
+                kind: "task".to_string(),
+                status: "open".to_string(),
+                waiting_on: None,
+                followup_at: None,
+                due_at: None,
+                ticket_ref: None,
+                url: None,
+                source: "manual".to_string(),
+                origin_app: None,
+                tags: vec![],
+                parent_id: Some(parent.id.clone()),
+            },
+        )
+        .unwrap();
+
+        // Verify parent subtask count
+        let fetched_parent = get_item_by_id(&conn, &parent.id).unwrap();
+        assert_eq!(fetched_parent.subtask_count, 2);
+        assert_eq!(fetched_parent.subtask_done_count, 0);
+
+        // Mark sub2 as done
+        update_item(
+            &conn,
+            &UpdateItem {
+                id: sub2.id.clone(),
+                status: Some("done".to_string()),
+                context_id: None,
+                kind: None,
+                title: None,
+                body: None,
+                waiting_on: None,
+                followup_at: None,
+                due_at: None,
+                ticket_ref: None,
+                url: None,
+                tags: None,
+                parent_id: None,
+            },
+        )
+        .unwrap();
+
+        let fetched_parent2 = get_item_by_id(&conn, &parent.id).unwrap();
+        assert_eq!(fetched_parent2.subtask_count, 2);
+        assert_eq!(fetched_parent2.subtask_done_count, 1);
+
+        // Un-nest sub1
+        update_item(
+            &conn,
+            &UpdateItem {
+                id: sub1.id.clone(),
+                parent_id: Some(None),
+                context_id: None,
+                kind: None,
+                title: None,
+                body: None,
+                status: None,
+                waiting_on: None,
+                followup_at: None,
+                due_at: None,
+                ticket_ref: None,
+                url: None,
+                tags: None,
+            },
+        )
+        .unwrap();
+
+        let fetched_parent3 = get_item_by_id(&conn, &parent.id).unwrap();
+        assert_eq!(fetched_parent3.subtask_count, 1);
+        assert_eq!(fetched_parent3.subtask_done_count, 1);
     }
 
     #[test]
@@ -1341,6 +1529,7 @@ mod tests {
             source: "manual".to_string(),
             origin_app: None,
             tags: vec![],
+            parent_id: None,
         };
         insert_item(&conn, &new_item).unwrap();
 

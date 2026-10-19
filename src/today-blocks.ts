@@ -8,6 +8,10 @@ export function computeTodayBlocks(items: Item[], todayDateStr: string): TodayBl
   let inbox_count = 0;
 
   for (const item of items) {
+    if (item.parent_id) {
+      continue;
+    }
+
     if (item.status === "done" || item.status === "dropped") {
       continue;
     }

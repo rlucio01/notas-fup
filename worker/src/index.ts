@@ -121,7 +121,9 @@ app.delete("/api/contexts/:id", async (c) => {
 app.get("/api/items", async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT i.*, c.name as context_name, c.color as context_color,
-       (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id) as tags_csv
+       (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id) as tags_csv,
+       (SELECT COUNT(*) FROM items s WHERE s.parent_id = i.id AND s.deleted_at IS NULL) as subtask_count,
+       (SELECT COUNT(*) FROM items s WHERE s.parent_id = i.id AND s.status = 'done' AND s.deleted_at IS NULL) as subtask_done_count
      FROM items i
      LEFT JOIN contexts c ON i.context_id = c.id
      WHERE i.deleted_at IS NULL
@@ -155,8 +157,8 @@ app.post("/api/items", async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO items (
        id, context_id, kind, title, body, status, waiting_on, followup_at,
-       due_at, ticket_ref, url, done_at, source, origin_app, position, created_at, updated_at
-     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16)`
+       due_at, ticket_ref, url, done_at, source, origin_app, position, created_at, updated_at, parent_id
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16, ?17)`
   )
     .bind(
       id,
@@ -174,7 +176,8 @@ app.post("/api/items", async (c) => {
       body.source || "mobile",
       body.origin_app || null,
       body.position ?? 0.0,
-      body.created_at || now
+      body.created_at || now,
+      body.parent_id || null
     )
     .run();
 
@@ -219,8 +222,9 @@ app.patch("/api/items/:id", async (c) => {
        url = CASE WHEN ?15 THEN ?16 ELSE url END,
        done_at = ?17,
        position = COALESCE(?18, position),
-       updated_at = ?19
-     WHERE id = ?20`
+       parent_id = CASE WHEN ?19 THEN ?20 ELSE parent_id END,
+       updated_at = ?21
+     WHERE id = ?22`
   )
     .bind(
       "context_id" in body,
@@ -241,6 +245,8 @@ app.patch("/api/items/:id", async (c) => {
       body.url ?? null,
       doneAt,
       body.position ?? null,
+      "parent_id" in body,
+      body.parent_id ?? null,
       now,
       id
     )
@@ -396,8 +402,8 @@ app.post("/api/sync", async (c) => {
         `INSERT INTO items (
            id, context_id, kind, title, body, status, waiting_on, followup_at,
            due_at, ticket_ref, url, done_at, source, origin_app, position,
-           created_at, updated_at, deleted_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+           created_at, updated_at, deleted_at, parent_id
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
          ON CONFLICT(id) DO UPDATE SET
            context_id = excluded.context_id,
            kind = excluded.kind,
@@ -414,7 +420,8 @@ app.post("/api/sync", async (c) => {
            origin_app = excluded.origin_app,
            position = excluded.position,
            updated_at = excluded.updated_at,
-           deleted_at = excluded.deleted_at
+           deleted_at = excluded.deleted_at,
+           parent_id = excluded.parent_id
          WHERE excluded.updated_at >= items.updated_at`
       ).bind(
         item.id,
@@ -434,7 +441,8 @@ app.post("/api/sync", async (c) => {
         item.position ?? 0.0,
         item.created_at || serverTime,
         item.updated_at || serverTime,
-        item.deleted_at || null
+        item.deleted_at || null,
+        item.parent_id || null
       )
     );
   }

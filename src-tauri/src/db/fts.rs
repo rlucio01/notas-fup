@@ -90,6 +90,7 @@ mod tests {
                 source: "manual".to_string(),
                 origin_app: None,
                 tags: vec![],
+                parent_id: None,
             };
             insert_item(&conn, &new).unwrap();
         }
@@ -157,6 +158,7 @@ mod tests {
             source: "manual".to_string(),
             origin_app: None,
             tags: vec![],
+            parent_id: None,
         };
         insert_item(&conn, &new).unwrap();
 

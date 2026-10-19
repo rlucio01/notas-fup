@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS items (
     source      TEXT NOT NULL DEFAULT 'manual',
     origin_app  TEXT,
     position    REAL NOT NULL DEFAULT 0.0,
+    parent_id   TEXT REFERENCES items(id) ON DELETE SET NULL,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
     deleted_at  TEXT
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
 CREATE INDEX IF NOT EXISTS idx_items_context ON items(context_id);
+CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id);
 CREATE INDEX IF NOT EXISTS idx_items_position ON items(position);
 CREATE INDEX IF NOT EXISTS idx_items_updated ON items(updated_at);
 CREATE INDEX IF NOT EXISTS idx_items_deleted ON items(deleted_at);
