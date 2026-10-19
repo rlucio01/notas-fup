@@ -13,7 +13,16 @@ import Review from "./Review";
 import Done from "./Done";
 import Settings from "./Settings";
 import ThemeToggle from "./ThemeToggle";
-import { PlusIcon } from "./Icons";
+import {
+  PlusIcon,
+  LayoutGridIcon,
+  InboxIcon,
+  SearchIcon,
+  FileTextIcon,
+  SparklesIcon,
+  CheckCircle2Icon,
+  SettingsIcon,
+} from "./Icons";
 import "./App.css";
 
 type TabId = "today" | "inbox" | "search" | "import" | "review" | "done" | "settings";
@@ -189,14 +198,20 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  const navItems: { id: TabId; label: string; shortcut: string; count?: number }[] = [
-    { id: "today", label: "Atividades", shortcut: "1" },
-    { id: "inbox", label: "Inbox", shortcut: "2", count: inboxCount },
-    { id: "search", label: "Busca", shortcut: "3" },
-    { id: "import", label: "Importar", shortcut: "4" },
-    { id: "review", label: "Revisão", shortcut: "5" },
-    { id: "done", label: "Concluídos", shortcut: "6" },
-    { id: "settings", label: "Configurações", shortcut: "7" },
+  const navItems: {
+    id: TabId;
+    label: string;
+    shortcut: string;
+    count?: number;
+    icon: React.ReactNode;
+  }[] = [
+    { id: "today", label: "Atividades", shortcut: "1", icon: <LayoutGridIcon size={16} /> },
+    { id: "inbox", label: "Inbox", shortcut: "2", count: inboxCount, icon: <InboxIcon size={16} /> },
+    { id: "search", label: "Busca", shortcut: "3", icon: <SearchIcon size={16} /> },
+    { id: "import", label: "Importar", shortcut: "4", icon: <FileTextIcon size={16} /> },
+    { id: "review", label: "Revisão", shortcut: "5", icon: <SparklesIcon size={16} /> },
+    { id: "done", label: "Concluídos", shortcut: "6", icon: <CheckCircle2Icon size={16} /> },
+    { id: "settings", label: "Configurações", shortcut: "7", icon: <SettingsIcon size={16} /> },
   ];
 
   const getPageTitle = (tab: TabId) => {
@@ -295,12 +310,17 @@ export const App: React.FC = () => {
                 title={sidebarCollapsed ? `${item.label} (${item.shortcut})` : undefined}
               >
                 <div className="nav-label">
-                  <span className="kbd-badge">{item.shortcut}</span>
+                  <span className="nav-icon" style={{ display: "inline-flex", alignItems: "center" }}>
+                    {item.icon}
+                  </span>
                   <span className="nav-item-text">{item.label}</span>
                 </div>
-                {item.count !== undefined && item.count > 0 && (
-                  <span className="nav-badge">{item.count}</span>
-                )}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  {item.count !== undefined && item.count > 0 && (
+                    <span className="nav-badge">{item.count}</span>
+                  )}
+                  <span className="kbd-badge nav-shortcut-badge">{item.shortcut}</span>
+                </div>
               </button>
             );
           })}
@@ -322,18 +342,34 @@ export const App: React.FC = () => {
       {/* Main Content Area */}
       <main className="main-content">
         <header className="page-header">
-          <div>
+          <div className="page-header-titles">
             <h1 className="page-title">{getPageTitle(activeTab)}</h1>
             <p className="page-subtitle">{getPageSubtitle(activeTab)}</p>
           </div>
 
+          {/* Quick Command & Search bar (Pane Style) */}
+          <div
+            className="topbar-center-search"
+            onClick={() => setActiveTab("search")}
+            title="Buscar em todas as notas, tickets e follow-ups (Ctrl+K)"
+          >
+            <SearchIcon size={14} />
+            <span className="topbar-center-search-text">Buscar notas, tickets, follow-ups...</span>
+            <span className="kbd-badge">Ctrl+K</span>
+          </div>
+
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <div className="topbar-workspace-status" title="Armazenamento SQLite local com busca instantânea FTS5">
+              <span className="status-pulse-dot" />
+              <span>SQLite Local</span>
+            </div>
+
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
 
             <button
-              className="btn btn-secondary btn-sm btn-icon"
+              className="btn btn-primary btn-sm btn-icon"
               onClick={handleOpenCaptureOrNew}
-              title="Criar nova nota (Ctrl+Alt+N)"
+              title="Criar nova nota ou demanda (Ctrl+Alt+N)"
             >
               <PlusIcon size={13} />
               <span>Nova Nota</span>
