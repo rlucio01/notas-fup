@@ -1,4 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  enable as enableAutostartPlugin,
+  disable as disableAutostartPlugin,
+  isEnabled as isAutostartPluginEnabled,
+} from "@tauri-apps/plugin-autostart";
 import { isTauri, getCloudConfig, DEFAULT_CLOUD_URL, DEFAULT_CLOUD_SECRET } from "./cloud-sync";
 import type { Context, Item, ProposedItem, FollowupAlerts, ItemStatus, ItemKind } from "./types";
 
@@ -428,4 +433,71 @@ export async function downloadAndInstallUpdate(installerUrl: string): Promise<st
     return "Download do instalador iniciado no navegador";
   }
 }
+
+export async function isAutostartEnabled(): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      return await isAutostartPluginEnabled();
+    } catch (err) {
+      console.error("Erro ao verificar autostart no sistema:", err);
+      return false;
+    }
+  }
+  try {
+    const saved = localStorage.getItem("notas_fup_config");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return Boolean(parsed.autostart);
+    }
+  } catch {}
+  return false;
+}
+
+export async function setAutostart(enabled: boolean): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      if (enabled) {
+        await enableAutostartPlugin();
+      } else {
+        await disableAutostartPlugin();
+      }
+      return await isAutostartPluginEnabled();
+    } catch (err) {
+      console.error("Erro ao alterar autostart no sistema:", err);
+      throw err;
+    }
+  }
+  return enabled;
+}
+
+export async function syncAutostartSetting(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const isCurrentlyEnabled = await isAutostartPluginEnabled();
+    const saved = localStorage.getItem("notas_fup_config");
+    let preferredState = true;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.autostart === "boolean") {
+          preferredState = parsed.autostart;
+        }
+      } catch {}
+    }
+
+    if (preferredState && !isCurrentlyEnabled) {
+      await enableAutostartPlugin();
+      return await isAutostartPluginEnabled();
+    } else if (!preferredState && isCurrentlyEnabled) {
+      await disableAutostartPlugin();
+      return false;
+    }
+
+    return isCurrentlyEnabled;
+  } catch (err) {
+    console.error("Erro ao sincronizar autostart com o sistema:", err);
+    return false;
+  }
+}
+
 

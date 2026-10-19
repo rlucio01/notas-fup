@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getInboxItems, openCaptureWindow, getContexts, createItem } from "./commands";
+import { getInboxItems, openCaptureWindow, getContexts, createItem, syncAutostartSetting } from "./commands";
 import { isTauri, getCloudConfig, syncWithCloud } from "./cloud-sync";
 import { WebAuth } from "./WebAuth";
 import { EditModal } from "./EditModal";
@@ -64,6 +64,9 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (!isTauri()) return;
+
+    // Sincroniza estado de autostart do app com o sistema operacional
+    syncAutostartSetting().catch(console.error);
 
     // 1. Initial sync on launch (immediate after mount)
     triggerDebouncedSync(800);

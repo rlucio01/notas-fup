@@ -8,6 +8,8 @@ import {
   triggerFollowupAlerts,
   checkLatestRelease,
   downloadAndInstallUpdate,
+  isAutostartEnabled,
+  setAutostart,
   type GitHubReleaseInfo,
 } from "./commands";
 import ThemeToggle from "./ThemeToggle";
@@ -153,6 +155,13 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
   useEffect(() => {
     getContexts().then(setContexts);
     handleCheckUpdate(false);
+    isAutostartEnabled()
+      .then((enabled) => {
+        setConfig((prev) => ({ ...prev, autostart: enabled }));
+      })
+      .catch((err) => {
+        console.error("Erro ao obter estado de autostart:", err);
+      });
   }, []);
 
   const updateConfig = (patch: Partial<AppConfig>) => {
@@ -287,7 +296,17 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
               type="checkbox"
               className="item-checkbox"
               checked={config.autostart}
-              onChange={(e) => updateConfig({ autostart: e.target.checked })}
+              onChange={async (e) => {
+                const checked = e.target.checked;
+                try {
+                  const actual = await setAutostart(checked);
+                  updateConfig({ autostart: actual });
+                } catch (err) {
+                  console.error("Falha ao configurar inicialização com o Windows:", err);
+                  setSaveStatus("Erro ao configurar inicialização no Windows");
+                  setTimeout(() => setSaveStatus("Salvo automaticamente"), 3000);
+                }
+              }}
             />
           </div>
 
