@@ -57,10 +57,10 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
 
   const [contexts, setContexts] = useState<Context[]>([]);
   const [newContextName, setNewContextName] = useState("");
-  const [newContextColor, setNewContextColor] = useState("#6366f1");
+  const [newContextColor, setNewContextColor] = useState("#3b82f6");
   const [editingContextId, setEditingContextId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [editColor, setEditColor] = useState("#6366f1");
+  const [editColor, setEditColor] = useState("#3b82f6");
   const [saveStatus, setSaveStatus] = useState<string>("Salvo automaticamente");
   const [cloudConfig, setCloudConfig] = useState(getCloudConfig);
   const [syncing, setSyncing] = useState(false);
@@ -182,7 +182,7 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
       const created = await createContext(name, newContextColor);
       setContexts((prev) => [...prev, created]);
       setNewContextName("");
-      setNewContextColor("#6366f1");
+      setNewContextColor("#3b82f6");
     } catch (err) {
       console.error("Erro ao criar contexto:", err);
     }
@@ -200,13 +200,13 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
   const startEditing = (ctx: Context) => {
     setEditingContextId(ctx.id);
     setEditName(ctx.name);
-    setEditColor(ctx.color || "#6366f1");
+    setEditColor(ctx.color || "#3b82f6");
   };
 
   const cancelEditing = () => {
     setEditingContextId(null);
     setEditName("");
-    setEditColor("#6366f1");
+    setEditColor("#3b82f6");
   };
 
   const saveEditing = async (ctx: Context) => {
@@ -499,7 +499,7 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
                   <input
                     type="color"
                     className="context-color-native-input"
-                    value={ctx.color || "#6366f1"}
+                    value={ctx.color || "#3b82f6"}
                     onChange={(e) => handleQuickColorChange(ctx, e.target.value)}
                     title="Escolha uma nova cor"
                   />

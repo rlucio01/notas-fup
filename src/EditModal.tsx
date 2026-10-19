@@ -40,7 +40,7 @@ const getFileBadgeInfo = (filename: string | null) => {
     case "SQL":
       return { label: ext, bg: "rgba(100, 116, 139, 0.15)", color: "#94a3b8", border: "rgba(100, 116, 139, 0.3)" };
     default:
-      return { label: ext.slice(0, 4), bg: "rgba(99, 102, 241, 0.15)", color: "#818cf8", border: "rgba(99, 102, 241, 0.3)" };
+      return { label: ext.slice(0, 4), bg: "rgba(100, 116, 139, 0.15)", color: "#94a3b8", border: "rgba(100, 116, 139, 0.3)" };
   }
 };
 
