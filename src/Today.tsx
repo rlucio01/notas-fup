@@ -13,6 +13,7 @@ import { isTauri } from "./cloud-sync";
 import { computeTodayBlocks } from "./today-blocks";
 import { EditModal } from "./EditModal";
 import { DetailPane } from "./DetailPane";
+import { BurnOverlay } from "./BurnOverlay";
 import {
   CalendarIcon,
   LinkIcon,
@@ -39,6 +40,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const [doneItems, setDoneItems] = useState<Item[]>([]);
   const [contexts, setContexts] = useState<Context[]>([]);
   const [selectedContext, setSelectedContext] = useState<string>("all");
+  const [selectedTag, setSelectedTag] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"all" | "executing" | "waiting">("all");
   const [layoutMode, setLayoutMode] = useState<"list" | "board">(() => {
     return (localStorage.getItem("notas_fup_today_layout") as "list" | "board") || "list";
@@ -53,6 +55,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dragSection, setDragSection] = useState<"executing" | "today" | "overdue" | null>(null);
+  // Itens sendo concluídos com animação incandescente de queima
+  const [burningItemIds, setBurningItemIds] = useState<Set<string>>(new Set());
 
   const handleLayoutChange = (mode: "list" | "board") => {
     setLayoutMode(mode);
@@ -152,19 +156,61 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     };
   }, [allItems]);
 
-  // Filter items by context selection
-  const filteredItems = useMemo(() => {
-    if (selectedContext === "all") return allItems;
-    if (selectedContext === "none") {
-      return allItems.filter((i) => !i.context_id && !i.context_name);
+  // Aggregate active tags and counts across active items
+  const { tagFilterList, totalActiveTagsCount } = useMemo(() => {
+    const active = allItems.filter((i) => i.status !== "done" && i.status !== "dropped");
+    const counts: Record<string, number> = {};
+    let withTagsCount = 0;
+
+    for (const item of active) {
+      if (item.tags && item.tags.length > 0) {
+        withTagsCount += 1;
+        for (const tag of item.tags) {
+          const clean = tag.trim().toLowerCase();
+          if (clean) {
+            counts[clean] = (counts[clean] || 0) + 1;
+          }
+        }
+      }
     }
-    const selLower = selectedContext.toLowerCase();
-    return allItems.filter((i) => {
-      if (i.context_id && i.context_id.toLowerCase() === selLower) return true;
-      if (i.context_name && i.context_name.toLowerCase() === selLower) return true;
-      return false;
+
+    const list = Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
+    return {
+      tagFilterList: list,
+      totalActiveTagsCount: withTagsCount,
+    };
+  }, [allItems]);
+
+  // Filter items by context and tag selection
+  const filteredItems = useMemo(() => {
+    return allItems.filter((item) => {
+      // 1. Context filter
+      if (selectedContext !== "all") {
+        if (selectedContext === "none") {
+          if (item.context_id || item.context_name) return false;
+        } else {
+          const selLower = selectedContext.toLowerCase();
+          const matchContext =
+            (item.context_id && item.context_id.toLowerCase() === selLower) ||
+            (item.context_name && item.context_name.toLowerCase() === selLower);
+          if (!matchContext) return false;
+        }
+      }
+
+      // 2. Tag filter
+      if (selectedTag !== "all") {
+        const itemTags = (item.tags || []).map((t) => t.trim().toLowerCase());
+        if (!itemTags.includes(selectedTag.toLowerCase())) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [allItems, selectedContext]);
+  }, [allItems, selectedContext, selectedTag]);
 
   // Compute blocks based on filtered items
   const blocks = useMemo(() => {
@@ -179,9 +225,35 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   }, [blocks.waiting]);
 
   const handleToggleDone = async (item: Item) => {
-    const newStatus = item.status === "done" ? "open" : "done";
-    await updateItem({ id: item.id, status: newStatus });
-    loadData();
+    // Se o item já estava concluído, reabre imediatamente
+    if (item.status === "done") {
+      await updateItem({ id: item.id, status: "open" });
+      loadData();
+      return;
+    }
+
+    // Se já estiver em processo de queima, ignora cliques repetidos
+    if (burningItemIds.has(item.id)) return;
+
+    // Dispara animação incandescente de queima
+    setBurningItemIds((prev) => new Set(prev).add(item.id));
+
+    // Aguarda o término da animação de combustão (650ms) antes de persistir
+    setTimeout(async () => {
+      try {
+        await updateItem({ id: item.id, status: "done" });
+      } catch (err) {
+        console.error("Erro ao concluir demanda:", err);
+      } finally {
+        setBurningItemIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+        loadData();
+        setSelectedDetailItem((curr) => (curr?.id === item.id ? null : curr));
+      }
+    }, 650);
   };
 
   const handlePostponeTomorrow = async (item: Item) => {
@@ -312,6 +384,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
     priorityIndex?: number
   ) => {
     const isDone = item.status === "done";
+    const isBurning = burningItemIds.has(item.id);
     const dateLabel = item.due_at || item.followup_at;
     const isDraggable = section === "executing" || section === "today" || section === "overdue";
     const isBeingDragged = draggedId === item.id;
@@ -323,7 +396,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
         key={item.id}
         className={`item-row ${isBeingDragged ? "is-dragging" : ""} ${
           isDragOver ? "drag-over-top" : ""
-        } ${isSelected ? "selected" : ""}`}
+        } ${isSelected ? "selected" : ""} ${isBurning ? "item-burning" : ""}`}
         draggable={isDraggable}
         onDragStart={(e) => {
           if (!isDraggable) return;
@@ -391,9 +464,10 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           <input
             type="checkbox"
             className="item-checkbox"
-            checked={isDone}
+            checked={isDone || isBurning}
             onChange={() => handleToggleDone(item)}
             title="Marcar como concluído"
+            disabled={isBurning}
           />
 
           <div
@@ -437,7 +511,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
                 </div>
               )}
 
-              <span className={`item-title ${isDone ? "done" : ""}`}>
+              <span className={`item-title ${isDone || isBurning ? "done" : ""}`}>
                 {item.title}
               </span>
             </div>
@@ -492,7 +566,16 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
                 )}
 
                 {item.tags?.map((t) => (
-                  <span key={t} className="badge badge-tag">
+                  <span
+                    key={t}
+                    className="badge badge-tag"
+                    style={{ cursor: "pointer" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedTag((prev) => (prev === t.toLowerCase() ? "all" : t.toLowerCase()));
+                    }}
+                    title={`Filtrar por #${t}`}
+                  >
                     #{t}
                   </span>
                 ))}
@@ -556,6 +639,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
             <span>+1 dia</span>
           </button>
         </div>
+
+        {isBurning && <BurnOverlay />}
       </div>
     );
   };
@@ -563,27 +648,29 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
   // Render a Kanban card (Board mode)
   const renderKanbanCard = (item: Item, priorityLabel?: string) => {
     const isDone = item.status === "done";
+    const isBurning = burningItemIds.has(item.id);
     const isSelected = selectedDetailItem?.id === item.id;
     const dateLabel = item.due_at || item.followup_at;
 
     return (
       <div
         key={item.id}
-        className={`kanban-card ${isSelected ? "selected" : ""}`}
+        className={`kanban-card ${isSelected ? "selected" : ""} ${isBurning ? "item-burning" : ""}`}
         onClick={() => setSelectedDetailItem(item)}
       >
         <div className="kanban-card-top">
           <input
             type="checkbox"
             className="item-checkbox"
-            checked={isDone}
+            checked={isDone || isBurning}
+            disabled={isBurning}
             onChange={(e) => {
               e.stopPropagation();
               handleToggleDone(item);
             }}
             title="Marcar como concluído"
           />
-          <div className={`kanban-card-title ${isDone ? "done" : ""}`}>
+          <div className={`kanban-card-title ${isDone || isBurning ? "done" : ""}`}>
             {priorityLabel && (
               <span className="badge badge-priority" style={{ marginRight: "6px" }}>
                 {priorityLabel}
@@ -615,6 +702,21 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
             <span className="badge badge-today">{dateLabel.substring(0, 10)}</span>
           )}
 
+          {item.tags?.map((t) => (
+            <span
+              key={t}
+              className="badge badge-tag"
+              style={{ cursor: "pointer" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedTag((prev) => (prev === t.toLowerCase() ? "all" : t.toLowerCase()));
+              }}
+              title={`Filtrar por #${t}`}
+            >
+              #{t}
+            </span>
+          ))}
+
           {item.attachment_count !== undefined && item.attachment_count > 0 && (
             <span className="badge badge-attachment">
               <PaperclipIcon size={10} />
@@ -622,6 +724,8 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
             </span>
           )}
         </div>
+
+        {isBurning && <BurnOverlay />}
       </div>
     );
   };
@@ -858,65 +962,103 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
             </div>
           </div>
 
-          {/* Barra de Filtro por Contexto */}
-          {contextFilterList.length > 0 && (
+          {/* Barra de Filtros: Contexto e Tags */}
+          {(contextFilterList.length > 0 || tagFilterList.length > 0) && (
             <div className="context-filter-bar">
-              <span className="context-filter-label">Contexto:</span>
-              <div className="context-filter-pills">
-                <button
-                  type="button"
-                  className={`context-filter-pill ${selectedContext === "all" ? "active" : ""}`}
-                  onClick={() => setSelectedContext("all")}
-                >
-                  <span>Todos</span>
-                  <span className="filter-count-badge">{totalActiveCount}</span>
-                </button>
+              {contextFilterList.length > 0 && (
+                <div className="filter-row">
+                  <span className="context-filter-label">Contexto:</span>
+                  <div className="context-filter-pills">
+                    <button
+                      type="button"
+                      className={`context-filter-pill ${selectedContext === "all" ? "active" : ""}`}
+                      onClick={() => setSelectedContext("all")}
+                    >
+                      <span>Todos</span>
+                      <span className="filter-count-badge">{totalActiveCount}</span>
+                    </button>
 
-                {contextFilterList.map((ctx) => (
-                  <button
-                    key={ctx.key}
-                    type="button"
-                    className={`context-filter-pill ${selectedContext === ctx.key ? "active" : ""}`}
-                    onClick={() => setSelectedContext(selectedContext === ctx.key ? "all" : ctx.key)}
-                    style={
-                      selectedContext === ctx.key && ctx.color
-                        ? { backgroundColor: ctx.color + "22", borderColor: ctx.color, color: ctx.color }
-                        : undefined
-                    }
-                    title={`Filtrar apenas demandas de @${ctx.name}`}
-                  >
-                    <span
-                      className="context-pill-indicator"
-                      style={{ backgroundColor: ctx.color || "var(--accent)" }}
-                    />
-                    <span>@{ctx.name}</span>
-                    <span className="filter-count-badge">{ctx.count}</span>
-                  </button>
-                ))}
+                    {contextFilterList.map((ctx) => (
+                      <button
+                        key={ctx.key}
+                        type="button"
+                        className={`context-filter-pill ${selectedContext === ctx.key ? "active" : ""}`}
+                        onClick={() => setSelectedContext(selectedContext === ctx.key ? "all" : ctx.key)}
+                        style={
+                          selectedContext === ctx.key && ctx.color
+                            ? { backgroundColor: ctx.color + "22", borderColor: ctx.color, color: ctx.color }
+                            : undefined
+                        }
+                        title={`Filtrar apenas demandas de @${ctx.name}`}
+                      >
+                        <span
+                          className="context-pill-indicator"
+                          style={{ backgroundColor: ctx.color || "var(--accent)" }}
+                        />
+                        <span>@{ctx.name}</span>
+                        <span className="filter-count-badge">{ctx.count}</span>
+                      </button>
+                    ))}
 
-                {noContextCount > 0 && (
-                  <button
-                    type="button"
-                    className={`context-filter-pill ${selectedContext === "none" ? "active" : ""}`}
-                    onClick={() => setSelectedContext(selectedContext === "none" ? "all" : "none")}
-                    title="Filtrar demandas sem contexto definido"
-                  >
-                    <span>Sem contexto</span>
-                    <span className="filter-count-badge">{noContextCount}</span>
-                  </button>
-                )}
+                    {noContextCount > 0 && (
+                      <button
+                        type="button"
+                        className={`context-filter-pill ${selectedContext === "none" ? "active" : ""}`}
+                        onClick={() => setSelectedContext(selectedContext === "none" ? "all" : "none")}
+                        title="Filtrar demandas sem contexto definido"
+                      >
+                        <span>Sem contexto</span>
+                        <span className="filter-count-badge">{noContextCount}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
-                {selectedContext !== "all" && (
+              {tagFilterList.length > 0 && (
+                <div className="filter-row filter-row-tags">
+                  <span className="context-filter-label">Tags:</span>
+                  <div className="context-filter-pills">
+                    <button
+                      type="button"
+                      className={`context-filter-pill tag-filter-pill ${selectedTag === "all" ? "active" : ""}`}
+                      onClick={() => setSelectedTag("all")}
+                    >
+                      <span>Todas</span>
+                      <span className="filter-count-badge">{totalActiveTagsCount}</span>
+                    </button>
+
+                    {tagFilterList.map((tag) => (
+                      <button
+                        key={tag.name}
+                        type="button"
+                        className={`context-filter-pill tag-filter-pill ${selectedTag === tag.name ? "active" : ""}`}
+                        onClick={() => setSelectedTag(selectedTag === tag.name ? "all" : tag.name)}
+                        title={`Filtrar por #${tag.name}`}
+                      >
+                        <span>#{tag.name}</span>
+                        <span className="filter-count-badge">{tag.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(selectedContext !== "all" || selectedTag !== "all") && (
+                <div style={{ display: "flex", justifyContent: "flex-end", width: "100%", marginTop: "2px" }}>
                   <button
                     type="button"
                     className="context-filter-clear"
-                    onClick={() => setSelectedContext("all")}
-                    title="Limpar filtro de contexto"
+                    onClick={() => {
+                      setSelectedContext("all");
+                      setSelectedTag("all");
+                    }}
+                    title="Limpar todos os filtros ativos"
                   >
-                    Limpar filtro
+                    Limpar filtros
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1149,6 +1291,7 @@ export const Today: React.FC<TodayProps> = ({ onNavigateToInbox }) => {
           contexts={contexts}
           onClose={() => setSelectedDetailItem(null)}
           onUpdated={loadData}
+          onToggleDone={handleToggleDone}
           onOpenFullEdit={(item) => {
             setEditingItem(item);
           }}

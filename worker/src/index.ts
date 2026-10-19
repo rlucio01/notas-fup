@@ -120,7 +120,8 @@ app.delete("/api/contexts/:id", async (c) => {
 
 app.get("/api/items", async (c) => {
   const { results } = await c.env.DB.prepare(
-    `SELECT i.*, c.name as context_name, c.color as context_color
+    `SELECT i.*, c.name as context_name, c.color as context_color,
+       (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id) as tags_csv
      FROM items i
      LEFT JOIN contexts c ON i.context_id = c.id
      WHERE i.deleted_at IS NULL
@@ -135,7 +136,12 @@ app.get("/api/items", async (c) => {
        i.created_at DESC`
   ).all();
 
-  return c.json(results);
+  const items = (results || []).map((i: any) => ({
+    ...i,
+    tags: i.tags_csv ? i.tags_csv.split(",").filter(Boolean) : [],
+  }));
+
+  return c.json(items);
 });
 
 app.post("/api/items", async (c) => {
@@ -240,8 +246,28 @@ app.patch("/api/items/:id", async (c) => {
     )
     .run();
 
+  if ("tags" in body && Array.isArray(body.tags)) {
+    await c.env.DB.prepare("DELETE FROM item_tags WHERE item_id = ?1").bind(id).run();
+    for (const rawTag of body.tags) {
+      const tag = String(rawTag).trim().toLowerCase().replace(/\s+/g, "");
+      if (!tag) continue;
+      const existing = await c.env.DB.prepare("SELECT id FROM tags WHERE name = ?1").bind(tag).first<{ id: string }>();
+      let tagId = existing?.id;
+      if (!tagId) {
+        tagId = crypto.randomUUID();
+        await c.env.DB.prepare("INSERT INTO tags (id, name) VALUES (?1, ?2)")
+          .bind(tagId, tag)
+          .run();
+      }
+      await c.env.DB.prepare("INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?1, ?2)")
+        .bind(id, tagId)
+        .run();
+    }
+  }
+
   const item = await c.env.DB.prepare(
-    `SELECT i.*, c.name as context_name, c.color as context_color
+    `SELECT i.*, c.name as context_name, c.color as context_color,
+       (SELECT GROUP_CONCAT(t.name, ',') FROM item_tags it JOIN tags t ON it.tag_id = t.id WHERE it.item_id = i.id) as tags_csv
      FROM items i
      LEFT JOIN contexts c ON i.context_id = c.id
      WHERE i.id = ?1`
@@ -249,7 +275,12 @@ app.patch("/api/items/:id", async (c) => {
     .bind(id)
     .first();
 
-  return c.json(item);
+  const formattedItem = item ? {
+    ...item,
+    tags: (item as any).tags_csv ? (item as any).tags_csv.split(",").filter(Boolean) : [],
+  } : null;
+
+  return c.json(formattedItem);
 });
 
 app.delete("/api/items/:id", async (c) => {
@@ -302,10 +333,16 @@ app.get("/api/sync", async (c) => {
       .all(),
   ]);
 
+  const contexts = contextsRes.results.map((ctx: any) => ({
+    ...ctx,
+    sync_enabled: Boolean(ctx.sync_enabled),
+    archived: Boolean(ctx.archived),
+  }));
+
   return c.json({
     server_time: serverTime,
     items: itemsRes.results,
-    contexts: contextsRes.results,
+    contexts,
   });
 });
 

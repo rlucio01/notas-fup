@@ -97,12 +97,49 @@ pub fn map_item_row(row: &rusqlite::Row) -> rusqlite::Result<Item> {
     })
 }
 
+fn deserialize_bool_or_int<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Visitor;
+
+    struct BoolOrIntVisitor;
+
+    impl<'de> Visitor<'de> for BoolOrIntVisitor {
+        type Value = bool;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a boolean or an integer (0 or 1)")
+        }
+
+        fn visit_bool<E>(self, v: bool) -> std::result::Result<bool, E> {
+            Ok(v)
+        }
+
+        fn visit_i64<E>(self, v: i64) -> std::result::Result<bool, E> {
+            Ok(v != 0)
+        }
+
+        fn visit_u64<E>(self, v: u64) -> std::result::Result<bool, E> {
+            Ok(v != 0)
+        }
+    }
+
+    deserializer.deserialize_any(BoolOrIntVisitor)
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
     pub id: String,
     pub name: String,
     pub color: String,
+    #[serde(default = "default_true", deserialize_with = "deserialize_bool_or_int")]
     pub sync_enabled: bool,
+    #[serde(default, deserialize_with = "deserialize_bool_or_int")]
     pub archived: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -450,8 +487,42 @@ pub struct SyncBundle {
     pub contexts: Vec<Context>,
 }
 
-pub fn get_modified_sync_data(conn: &Connection, since: Option<&str>) -> Result<SyncBundle> {
-    let since_str = since.map(str::trim).filter(|s| !s.is_empty());
+pub fn get_meta(conn: &Connection, key: &str) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT value FROM meta WHERE key = ?1")?;
+    let mut rows = stmt.query([key])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get(0)?))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn set_meta(conn: &Connection, key: &str, val: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, val],
+    )?;
+    Ok(())
+}
+
+pub fn get_modified_sync_data(conn: &Connection, since: Option<&str>, force_full: bool) -> Result<SyncBundle> {
+    let sqlite_meta_sync = if !force_full {
+        get_meta(conn, "last_sync_at").unwrap_or(None)
+    } else {
+        None
+    };
+
+    let since_str = if force_full {
+        None
+    } else {
+        let trimmed = since.map(str::trim).filter(|s| !s.is_empty());
+        if trimmed.is_some() {
+            trimmed
+        } else {
+            sqlite_meta_sync.as_deref().map(str::trim).filter(|s| !s.is_empty())
+        }
+    };
 
     let items = if let Some(s) = since_str {
         let sql = format!(
@@ -1273,18 +1344,18 @@ mod tests {
         };
         insert_item(&conn, &new_item).unwrap();
 
-        // 1. Full sync (since: None)
-        let full = get_modified_sync_data(&conn, None).unwrap();
+        // 1. Full sync (since: None, force_full: true)
+        let full = get_modified_sync_data(&conn, None, true).unwrap();
         assert_eq!(full.items.len(), 1);
         assert_eq!(full.contexts.len(), 1);
 
         // 2. Delta sync with past timestamp
-        let delta_old = get_modified_sync_data(&conn, Some("1970-01-01T00:00:00Z")).unwrap();
+        let delta_old = get_modified_sync_data(&conn, Some("1970-01-01T00:00:00Z"), false).unwrap();
         assert_eq!(delta_old.items.len(), 1);
         assert_eq!(delta_old.contexts.len(), 1);
 
         // 3. Delta sync with future timestamp
-        let delta_future = get_modified_sync_data(&conn, Some("2999-01-01T00:00:00Z")).unwrap();
+        let delta_future = get_modified_sync_data(&conn, Some("2999-01-01T00:00:00Z"), false).unwrap();
         assert_eq!(delta_future.items.len(), 0);
         assert_eq!(delta_future.contexts.len(), 0);
 
@@ -1303,5 +1374,13 @@ mod tests {
         assert_eq!(count, 1);
         let ctx_list = get_contexts(&conn).unwrap();
         assert_eq!(ctx_list.len(), 2);
+    }
+
+    #[test]
+    fn test_serde_d1_context() {
+        let json = r##"{"id":"01a14c6d-4417-727f-816c-5641431b7d60","name":"Belzya","color":"#f97316","sync_enabled":1,"archived":0,"created_at":"2026-10-18T00:33:11.703905500+00:00","updated_at":"2026-10-18T03:22:45.693043200+00:00","deleted_at":null}"##;
+        let res: std::result::Result<Context, serde_json::Error> = serde_json::from_str(json);
+        println!("D1 Context Deser Result: {:?}", res);
+        assert!(res.is_ok());
     }
 }

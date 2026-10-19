@@ -4,6 +4,7 @@ import { getInboxItems, getContexts, getTags, updateItem, reorderItems } from ".
 import { isTauri } from "./cloud-sync";
 import { parseDateToken } from "./capture-syntax";
 import { EditModal } from "./EditModal";
+import { BurnOverlay } from "./BurnOverlay";
 import { FolderIcon, CalendarIcon, TrashIcon, GripIcon, PaperclipIcon } from "./Icons";
 import type { Item, Context } from "./types";
 
@@ -14,6 +15,7 @@ export const Inbox: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
+  const [burningItemIds, setBurningItemIds] = useState<Set<string>>(new Set());
 
   // Drag and drop state for prioritizing inbox items
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -98,6 +100,30 @@ export const Inbox: React.FC = () => {
 
   const selectedItem = items[selectedIndex] || null;
 
+  const handleToggleDone = useCallback(
+    async (item: Item) => {
+      if (burningItemIds.has(item.id)) return;
+
+      setBurningItemIds((prev) => new Set(prev).add(item.id));
+
+      setTimeout(async () => {
+        try {
+          await updateItem({ id: item.id, status: "done" });
+        } catch (err) {
+          console.error("Erro ao concluir item:", err);
+        } finally {
+          setBurningItemIds((prev) => {
+            const next = new Set(prev);
+            next.delete(item.id);
+            return next;
+          });
+          loadData();
+        }
+      }, 650);
+    },
+    [burningItemIds, loadData]
+  );
+
   // Handle global keyboard shortcuts on the inbox
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
@@ -134,8 +160,7 @@ export const Inbox: React.FC = () => {
         setPromptValue("");
       } else if (key === "x") {
         e.preventDefault();
-        await updateItem({ id: selectedItem.id, status: "done" });
-        loadData();
+        handleToggleDone(selectedItem);
       } else if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         await updateItem({ id: selectedItem.id, status: "dropped" });
@@ -145,7 +170,7 @@ export const Inbox: React.FC = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [promptMode, editingItem, selectedItem, items.length, loadData]);
+  }, [promptMode, editingItem, selectedItem, items.length, loadData, handleToggleDone]);
 
   const handlePromptSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -259,11 +284,12 @@ export const Inbox: React.FC = () => {
             const isSelected = index === selectedIndex;
             const isBeingDragged = draggedId === item.id;
             const isDragOver = dragOverId === item.id && draggedId !== item.id;
+            const isBurning = burningItemIds.has(item.id);
 
             return (
               <div
                 key={item.id}
-                className={`item-row ${isSelected ? "selected" : ""} ${isBeingDragged ? "is-dragging" : ""} ${isDragOver ? "drag-over-top" : ""}`}
+                className={`item-row ${isSelected ? "selected" : ""} ${isBeingDragged ? "is-dragging" : ""} ${isDragOver ? "drag-over-top" : ""} ${isBurning ? "item-burning" : ""}`}
                 onClick={() => setSelectedIndex(index)}
                 draggable={true}
                 onDragStart={(e) => {
@@ -320,11 +346,9 @@ export const Inbox: React.FC = () => {
                   <input
                     type="checkbox"
                     className="item-checkbox"
-                    checked={false}
-                    onChange={async () => {
-                      await updateItem({ id: item.id, status: "done" });
-                      loadData();
-                    }}
+                    checked={isBurning}
+                    disabled={isBurning}
+                    onChange={() => handleToggleDone(item)}
                     title="Concluir item (X)"
                   />
 
@@ -335,7 +359,7 @@ export const Inbox: React.FC = () => {
                     title="Clique para editar ou reclassificar (E)"
                   >
                     <div className="item-title-row">
-                      <span className="item-title">{item.title}</span>
+                      <span className={`item-title ${isBurning ? "done" : ""}`}>{item.title}</span>
                     </div>
 
                     {Boolean(
@@ -421,6 +445,8 @@ export const Inbox: React.FC = () => {
                     <span>Descartar</span>
                   </button>
                 </div>
+
+                {isBurning && <BurnOverlay />}
               </div>
             );
           })}

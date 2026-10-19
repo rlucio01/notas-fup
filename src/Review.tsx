@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getReviewItems, updateItem, getContexts } from "./commands";
 import { EditModal } from "./EditModal";
+import { BurnOverlay } from "./BurnOverlay";
 import { CalendarIcon, PaperclipIcon } from "./Icons";
 import type { ReviewData, Item, Context } from "./types";
 
@@ -14,6 +15,7 @@ export const Review: React.FC = () => {
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
   const [staleDays] = useState(5);
+  const [burningItemIds, setBurningItemIds] = useState<Set<string>>(new Set());
 
   const loadData = async () => {
     try {
@@ -50,9 +52,30 @@ export const Review: React.FC = () => {
   }, [staleDays]);
 
   const handleToggleDone = async (item: Item) => {
-    const newStatus = item.status === "done" ? "open" : "done";
-    await updateItem({ id: item.id, status: newStatus });
-    loadData();
+    if (item.status === "done") {
+      await updateItem({ id: item.id, status: "open" });
+      loadData();
+      return;
+    }
+
+    if (burningItemIds.has(item.id)) return;
+
+    setBurningItemIds((prev) => new Set(prev).add(item.id));
+
+    setTimeout(async () => {
+      try {
+        await updateItem({ id: item.id, status: "done" });
+      } catch (err) {
+        console.error("Erro ao concluir item:", err);
+      } finally {
+        setBurningItemIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+        loadData();
+      }
+    }, 650);
   };
 
   const handlePostponeTomorrow = async (item: Item) => {
@@ -69,13 +92,16 @@ export const Review: React.FC = () => {
 
   const renderItemRow = (item: Item) => {
     const isDone = item.status === "done";
+    const isBurning = burningItemIds.has(item.id);
+
     return (
-      <div key={item.id} className="item-row">
+      <div key={item.id} className={`item-row ${isBurning ? "item-burning" : ""}`}>
         <div className="item-row-top">
           <input
             type="checkbox"
             className="item-checkbox"
-            checked={isDone}
+            checked={isDone || isBurning}
+            disabled={isBurning}
             onChange={() => handleToggleDone(item)}
           />
           <div
@@ -85,7 +111,7 @@ export const Review: React.FC = () => {
             title="Clique para editar ou reclassificar"
           >
             <div className="item-title-row">
-              <span className={`item-title ${isDone ? "done" : ""}`}>
+              <span className={`item-title ${isDone || isBurning ? "done" : ""}`}>
                 {item.title}
               </span>
             </div>
@@ -128,6 +154,8 @@ export const Review: React.FC = () => {
             <span>+1 dia</span>
           </button>
         </div>
+
+        {isBurning && <BurnOverlay />}
       </div>
     );
   };

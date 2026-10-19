@@ -87,8 +87,19 @@ export async function syncWithCloud(
 
     // 1. Get ONLY modified local data (Delta-Sync)
     if (isTauri()) {
+      if (!config.lastSyncAt && !forceFull) {
+        try {
+          const sqliteSyncAt = await invoke<string | null>("get_last_sync_at_cmd");
+          if (sqliteSyncAt) {
+            config.lastSyncAt = sqliteSyncAt;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       const sinceParam = forceFull ? null : (config.lastSyncAt || null);
-      const dataJson = await invoke<string>("get_sync_data_cmd", { since: sinceParam });
+      const dataJson = await invoke<string>("get_sync_data_cmd", { since: sinceParam, forceFull });
       const bundle: { items: Item[]; contexts: Context[] } = JSON.parse(dataJson);
       localItems = bundle.items || [];
       localContexts = bundle.contexts || [];
@@ -143,15 +154,23 @@ export async function syncWithCloud(
         });
       }
       if (pullData.contexts && pullData.contexts.length > 0) {
-        await invoke<number>("sync_remote_contexts_cmd", {
-          contextsJson: JSON.stringify(pullData.contexts),
-        });
+        try {
+          await invoke<number>("sync_remote_contexts_cmd", {
+            contextsJson: JSON.stringify(pullData.contexts),
+          });
+        } catch (ctxErr) {
+          console.warn("Falha ao mesclar contextos remotos:", ctxErr);
+        }
       }
     }
 
-    // 5. Update last sync timestamp
-    config.lastSyncAt = pullData.server_time || new Date().toISOString();
+    // 5. Update last sync timestamp in BOTH localStorage and SQLite meta table
+    const nextSyncTimestamp = pullData.server_time || new Date().toISOString();
+    config.lastSyncAt = nextSyncTimestamp;
     saveCloudConfig(config);
+    if (isTauri()) {
+      invoke("set_last_sync_at_cmd", { timestamp: nextSyncTimestamp }).catch(console.error);
+    }
 
     return {
       success: true,

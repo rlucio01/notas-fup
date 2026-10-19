@@ -255,11 +255,30 @@ fn sync_remote_contexts_cmd(
 fn get_sync_data_cmd(
     state: tauri::State<'_, Mutex<rusqlite::Connection>>,
     since: Option<String>,
+    force_full: Option<bool>,
 ) -> Result<String, String> {
     let conn = state.lock().map_err(|e| e.to_string())?;
-    let bundle = db::queries::get_modified_sync_data(&conn, since.as_deref())
+    let bundle = db::queries::get_modified_sync_data(&conn, since.as_deref(), force_full.unwrap_or(false))
         .map_err(|e| e.to_string())?;
     serde_json::to_string(&bundle).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_last_sync_at_cmd(
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+    timestamp: String,
+) -> Result<(), String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    db::queries::set_meta(&conn, "last_sync_at", &timestamp).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_last_sync_at_cmd(
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+) -> Result<Option<String>, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    db::queries::get_meta(&conn, "last_sync_at").map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -482,6 +501,8 @@ pub fn run() {
             sync_remote_items_cmd,
             sync_remote_contexts_cmd,
             get_sync_data_cmd,
+            set_last_sync_at_cmd,
+            get_last_sync_at_cmd,
             download_and_install_update,
         ])
         .setup(|app| {

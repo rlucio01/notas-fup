@@ -1,6 +1,6 @@
 [package]
 name = "notas-fup"
-version = "0.2.3"
+version = "0.2.4"
 description = "Substituto leve do Notepad para captura de demandas, follow-ups e busca."
 authors = ["rlucio01"]
 edition = "2021"
