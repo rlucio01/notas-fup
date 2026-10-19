@@ -72,6 +72,19 @@ export async function getContexts(): Promise<Context[]> {
   return res.json();
 }
 
+export async function getTags(): Promise<string[]> {
+  if (isTauri()) {
+    const json = await invoke<string>("get_tags");
+    return JSON.parse(json);
+  }
+  const res = await fetch(getApiUrl("/api/items"), { headers: getApiHeaders() });
+  if (!res.ok) return [];
+  const items: Item[] = await res.json();
+  const set = new Set<string>();
+  items.forEach((i) => i.tags?.forEach((t) => set.add(t)));
+  return Array.from(set).sort();
+}
+
 export async function createContext(name: string, color: string): Promise<Context> {
   if (isTauri()) {
     const json = await invoke<string>("create_context", { name, color });

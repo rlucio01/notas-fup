@@ -100,6 +100,15 @@ fn get_contexts(
 }
 
 #[tauri::command]
+fn get_tags(
+    state: tauri::State<'_, Mutex<rusqlite::Connection>>,
+) -> Result<String, String> {
+    let conn = state.lock().map_err(|e| e.to_string())?;
+    let tags = db::queries::get_tags(&conn).map_err(|e| e.to_string())?;
+    serde_json::to_string(&tags).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn create_context(
     state: tauri::State<'_, Mutex<rusqlite::Connection>>,
     name: String,
@@ -451,6 +460,7 @@ pub fn run() {
             parse_notepad_text,
             import_items,
             get_contexts,
+            get_tags,
             create_context,
             update_context,
             delete_context,

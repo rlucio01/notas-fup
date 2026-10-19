@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { updateItem, createContext, getItemAttachments, addAttachment, deleteAttachment } from "./commands";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { updateItem, createContext, getItemAttachments, addAttachment, deleteAttachment, getTags } from "./commands";
+import { useAutocomplete } from "./useAutocomplete";
+import { AutocompleteDropdown } from "./AutocompleteDropdown";
 import { PencilIcon, PaperclipIcon, DownloadIcon } from "./Icons";
 import type { Item, Context, ItemStatus, Attachment } from "./types";
 
@@ -80,6 +82,8 @@ export const EditModal: React.FC<EditModalProps> = ({
   const [newContextName, setNewContextName] = useState("");
   const [tags, setTags] = useState<string[]>(item.tags || []);
   const [tagInput, setTagInput] = useState("");
+  const [allAvailableTags, setAllAvailableTags] = useState<string[]>([]);
+  const [selectedTagIndex, setSelectedTagIndex] = useState(0);
   const [status, setStatus] = useState<ItemStatus>(item.status || "open");
   const [waitingOn, setWaitingOn] = useState(item.waiting_on || "");
   const [dueAt, setDueAt] = useState(item.due_at?.substring(0, 10) || "");
@@ -90,6 +94,28 @@ export const EditModal: React.FC<EditModalProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getTags().then(setAllAvailableTags).catch(console.error);
+  }, []);
+
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  const bodyAutocomplete = useAutocomplete(
+    body,
+    setBody,
+    bodyRef,
+    contexts,
+    allAvailableTags
+  );
+
+  const matchingTags = useMemo(() => {
+    const q = tagInput.trim().toLowerCase().replace(/^#/, "");
+    if (!q) return [];
+    return allAvailableTags
+      .filter((t) => t.toLowerCase().includes(q) && !tags.includes(t))
+      .slice(0, 8);
+  }, [tagInput, allAvailableTags, tags]);
 
   // Load existing attachments on mount
   useEffect(() => {
@@ -220,6 +246,28 @@ export const EditModal: React.FC<EditModalProps> = ({
   };
 
   const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (matchingTags.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedTagIndex((idx) => (idx + 1) % matchingTags.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedTagIndex((idx) => (idx - 1 + matchingTags.length) % matchingTags.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const picked = matchingTags[selectedTagIndex] || tagInput.trim().replace(/^#/, "");
+        if (picked && !tags.includes(picked)) {
+          setTags([...tags, picked]);
+        }
+        setTagInput("");
+        return;
+      }
+    }
+
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       handleAddTag();
@@ -380,7 +428,7 @@ export const EditModal: React.FC<EditModalProps> = ({
           </div>
 
           {/* Tags */}
-          <div className="form-group">
+          <div className="form-group" style={{ position: "relative" }}>
             <label className="form-label">Tags (#) - Adicione ou remova tags</label>
             <div className="tags-container">
               {tags.map((t) => (
@@ -401,11 +449,47 @@ export const EditModal: React.FC<EditModalProps> = ({
                 className="tag-input"
                 placeholder={tags.length === 0 ? "Digite uma tag e pressione Enter..." : "Adicionar tag..."}
                 value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
+                onChange={(e) => {
+                  setTagInput(e.target.value);
+                  setSelectedTagIndex(0);
+                }}
                 onKeyDown={handleTagInputKeyDown}
                 onBlur={handleAddTag}
               />
             </div>
+
+            {matchingTags.length > 0 && (
+              <div
+                className="autocomplete-dropdown"
+                style={{ position: "relative", width: "100%", marginTop: "4px" }}
+              >
+                <div className="autocomplete-header">Tags Existentes Sugeridas</div>
+                <div className="autocomplete-list">
+                  {matchingTags.map((t, idx) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`autocomplete-item ${idx === selectedTagIndex ? "selected" : ""}`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (!tags.includes(t)) {
+                          setTags([...tags, t]);
+                        }
+                        setTagInput("");
+                      }}
+                    >
+                      <span className="autocomplete-item-left">
+                        <span className="autocomplete-item-prefix">#</span>
+                        <span className="autocomplete-item-name">{t}</span>
+                      </span>
+                      {idx === selectedTagIndex && (
+                        <span className="autocomplete-item-hint">Enter</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Aguardando quem */}
@@ -483,15 +567,43 @@ export const EditModal: React.FC<EditModalProps> = ({
           </div>
 
           {/* Detalhes / Body */}
-          <div className="form-group">
-            <label className="form-label">Detalhes / Conteúdo</label>
-            <textarea
-              className="form-textarea"
-              rows={4}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Anotações adicionais, histórico, comandos ou checklists..."
-            />
+          <div className="form-group" style={{ position: "relative" }}>
+            <label className="form-label">Detalhes / Conteúdo (@contexto, #tag)</label>
+            <div style={{ position: "relative" }}>
+              <textarea
+                ref={bodyRef}
+                className="form-textarea"
+                rows={4}
+                value={body}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setBody(val);
+                  bodyAutocomplete.checkTrigger(val, e.target.selectionStart || val.length);
+                }}
+                onKeyUp={(e) => {
+                  bodyAutocomplete.checkTrigger(body, e.currentTarget.selectionStart || body.length);
+                }}
+                onClick={(e) => {
+                  bodyAutocomplete.checkTrigger(body, e.currentTarget.selectionStart || body.length);
+                }}
+                onKeyDown={(e) => {
+                  if (bodyAutocomplete.isOpen) {
+                    const handled = bodyAutocomplete.handleKeyDown(e);
+                    if (handled) return;
+                  }
+                }}
+                placeholder="Anotações adicionais, histórico, comandos (@contexto, #tag) ou checklists..."
+              />
+              {bodyAutocomplete.isOpen && (
+                <AutocompleteDropdown
+                  items={bodyAutocomplete.items}
+                  selectedIndex={bodyAutocomplete.selectedIndex}
+                  onSelect={bodyAutocomplete.handleSelect}
+                  title={bodyAutocomplete.trigger === "@" ? "Contextos (@)" : "Tags (#)"}
+                  style={{ bottom: "100%", left: 0, width: "100%", marginBottom: "4px" }}
+                />
+              )}
+            </div>
           </div>
 
           {/* Anexos e Documentos */}

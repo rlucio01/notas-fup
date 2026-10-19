@@ -847,6 +847,14 @@ pub fn reorder_items(conn: &Connection, item_ids: &[String]) -> Result<()> {
     Ok(())
 }
 
+pub fn get_tags(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT name FROM tags ORDER BY name ASC")?;
+    let tags = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<std::result::Result<Vec<String>, _>>()?;
+    Ok(tags)
+}
+
 // ── Follow-up Alerts ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

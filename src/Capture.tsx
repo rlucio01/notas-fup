@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useRef } from "react";
 import { parseQuickCapture } from "./capture-syntax";
-import { saveCapture, closeCaptureWindow, getActiveApp } from "./commands";
+import { saveCapture, closeCaptureWindow, getActiveApp, getContexts, getTags } from "./commands";
+import { useAutocomplete } from "./useAutocomplete";
+import { AutocompleteDropdown } from "./AutocompleteDropdown";
+import type { Context } from "./types";
 import "./Capture.css";
 
 export const Capture: React.FC = () => {
@@ -8,6 +11,8 @@ export const Capture: React.FC = () => {
   const [originApp, setOriginApp] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contexts, setContexts] = useState<Context[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -23,6 +28,10 @@ export const Capture: React.FC = () => {
       if (app) setOriginApp(app);
     });
 
+    // Load available contexts and tags for autocomplete
+    getContexts().then(setContexts).catch(console.error);
+    getTags().then(setTags).catch(console.error);
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -34,6 +43,7 @@ export const Capture: React.FC = () => {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const autocomplete = useAutocomplete(text, setText, textareaRef, contexts, tags);
   const parsed = parseQuickCapture(text);
 
   const handleSubmit = async () => {
@@ -42,7 +52,6 @@ export const Capture: React.FC = () => {
     setError(null);
     try {
       await saveCapture(text, originApp);
-      // Window is closed by backend after save
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
       setSaving(false);
@@ -50,6 +59,10 @@ export const Capture: React.FC = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (autocomplete.isOpen) {
+      const handled = autocomplete.handleKeyDown(e);
+      if (handled) return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -77,16 +90,38 @@ export const Capture: React.FC = () => {
         </button>
       </div>
 
-      <textarea
-        ref={textareaRef}
-        className="capture-textarea"
-        placeholder="O que precisa ser feito? @contexto #tag !data ~pessoa"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={saving}
-        rows={2}
-      />
+      <div style={{ position: "relative", width: "100%" }}>
+        <textarea
+          ref={textareaRef}
+          className="capture-textarea"
+          placeholder="O que precisa ser feito? @contexto #tag !data ~pessoa"
+          value={text}
+          onChange={(e) => {
+            const val = e.target.value;
+            setText(val);
+            autocomplete.checkTrigger(val, e.target.selectionStart || val.length);
+          }}
+          onKeyUp={(e) => {
+            autocomplete.checkTrigger(text, e.currentTarget.selectionStart || text.length);
+          }}
+          onClick={(e) => {
+            autocomplete.checkTrigger(text, e.currentTarget.selectionStart || text.length);
+          }}
+          onKeyDown={handleKeyDown}
+          disabled={saving}
+          rows={2}
+        />
+
+        {autocomplete.isOpen && (
+          <AutocompleteDropdown
+            items={autocomplete.items}
+            selectedIndex={autocomplete.selectedIndex}
+            onSelect={autocomplete.handleSelect}
+            title={autocomplete.trigger === "@" ? "Contextos (@)" : "Tags (#)"}
+            style={{ top: "100%", left: 0, width: "100%", marginTop: "4px" }}
+          />
+        )}
+      </div>
 
       <div className="capture-chips">
         {parsed.context && (

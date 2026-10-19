@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getInboxItems, getContexts, updateItem, reorderItems } from "./commands";
+import { getInboxItems, getContexts, getTags, updateItem, reorderItems } from "./commands";
 import { isTauri } from "./cloud-sync";
 import { parseDateToken } from "./capture-syntax";
 import { EditModal } from "./EditModal";
@@ -10,6 +10,7 @@ import type { Item, Context } from "./types";
 export const Inbox: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [contexts, setContexts] = useState<Context[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
@@ -24,9 +25,14 @@ export const Inbox: React.FC = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [inboxItems, ctxs] = await Promise.all([getInboxItems(), getContexts()]);
+      const [inboxItems, ctxs, tagList] = await Promise.all([
+        getInboxItems(),
+        getContexts(),
+        getTags().catch(() => []),
+      ]);
       setItems(inboxItems);
       setContexts(ctxs);
+      setAllTags(tagList);
       setSelectedIndex((idx) => (inboxItems.length > 0 ? Math.min(idx, inboxItems.length - 1) : 0));
     } catch (e) {
       console.error("Erro ao carregar Inbox:", e);
@@ -146,7 +152,7 @@ export const Inbox: React.FC = () => {
     if (!selectedItem || !promptMode) return;
 
     if (promptMode === "context") {
-      const trimmed = promptValue.trim();
+      const trimmed = promptValue.trim().replace(/^@/, "");
       if (trimmed) {
         // Find existing context or assign by name
         const match = contexts.find((c) => c.name.toLowerCase() === trimmed.toLowerCase());
@@ -158,7 +164,7 @@ export const Inbox: React.FC = () => {
         });
       }
     } else if (promptMode === "tag") {
-      const tag = promptValue.trim().toLowerCase();
+      const tag = promptValue.trim().toLowerCase().replace(/^#/, "");
       if (tag) {
         const currentTags = selectedItem.tags || [];
         if (!currentTags.includes(tag)) {
@@ -201,6 +207,22 @@ export const Inbox: React.FC = () => {
       status: "open",
     });
     setPromptMode(null);
+    loadData();
+  };
+
+  const handleSelectTagOption = async (tag: string) => {
+    if (!selectedItem) return;
+    const clean = tag.trim().toLowerCase().replace(/^#/, "");
+    if (!clean) return;
+    const currentTags = selectedItem.tags || [];
+    if (!currentTags.includes(clean)) {
+      await updateItem({
+        id: selectedItem.id,
+        tags: [...currentTags, clean],
+      });
+    }
+    setPromptMode(null);
+    setPromptValue("");
     loadData();
   };
 
@@ -449,17 +471,64 @@ export const Inbox: React.FC = () => {
                   flexWrap: "wrap",
                   gap: "6px",
                   marginBottom: "12px",
+                  maxHeight: "130px",
+                  overflowY: "auto",
                 }}
               >
-                {contexts.map((ctx) => (
-                  <button
-                    key={ctx.id}
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => handleSelectContextOption(ctx)}
-                  >
-                    @{ctx.name}
-                  </button>
-                ))}
+                {contexts
+                  .filter((ctx) => {
+                    const q = promptValue.trim().toLowerCase().replace(/^@/, "");
+                    return !q || ctx.name.toLowerCase().includes(q);
+                  })
+                  .map((ctx) => (
+                    <button
+                      key={ctx.id}
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleSelectContextOption(ctx)}
+                    >
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: ctx.color || "var(--color-primary)",
+                          marginRight: 6,
+                        }}
+                      />
+                      @{ctx.name}
+                    </button>
+                  ))}
+              </div>
+            )}
+
+            {promptMode === "tag" && allTags.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "6px",
+                  marginBottom: "12px",
+                  maxHeight: "130px",
+                  overflowY: "auto",
+                }}
+              >
+                {allTags
+                  .filter((t) => {
+                    const q = promptValue.trim().toLowerCase().replace(/^#/, "");
+                    return !q || t.toLowerCase().includes(q);
+                  })
+                  .map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleSelectTagOption(t)}
+                    >
+                      #{t}
+                    </button>
+                  ))}
               </div>
             )}
 

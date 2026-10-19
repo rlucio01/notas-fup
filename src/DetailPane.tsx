@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { updateItem } from "./commands";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { updateItem, getTags } from "./commands";
+import { useAutocomplete } from "./useAutocomplete";
+import { AutocompleteDropdown } from "./AutocompleteDropdown";
 import {
   CalendarIcon,
   LinkIcon,
@@ -33,6 +35,10 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
   const [body, setBody] = useState("");
   const [status, setStatus] = useState<ItemStatus>("open");
   const [contextId, setContextId] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
+  const [allAvailableTags, setAllAvailableTags] = useState<string[]>([]);
+  const [selectedTagIndex, setSelectedTagIndex] = useState(0);
   const [dueAt, setDueAt] = useState("");
   const [followupAt, setFollowupAt] = useState("");
   const [waitingOn, setWaitingOn] = useState("");
@@ -41,12 +47,20 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
   const [isDirty, setIsDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    getTags().then(setAllAvailableTags).catch(console.error);
+  }, []);
+
   useEffect(() => {
     if (item) {
       setTitle(item.title || "");
       setBody(item.body || "");
       setStatus(item.status || "open");
       setContextId(item.context_id || null);
+      setTags(item.tags || []);
+      setTagInput("");
       setDueAt(item.due_at?.substring(0, 10) || "");
       setFollowupAt(item.followup_at?.substring(0, 10) || "");
       setWaitingOn(item.waiting_on || "");
@@ -55,6 +69,68 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
       setIsDirty(false);
     }
   }, [item]);
+
+  const bodyAutocomplete = useAutocomplete(
+    body,
+    (val) => {
+      setBody(val);
+      setIsDirty(true);
+    },
+    bodyRef,
+    contexts,
+    allAvailableTags
+  );
+
+  const matchingTags = useMemo(() => {
+    const q = tagInput.trim().toLowerCase().replace(/^#/, "");
+    if (!q) return [];
+    return allAvailableTags
+      .filter((t) => t.toLowerCase().includes(q) && !tags.includes(t))
+      .slice(0, 8);
+  }, [tagInput, allAvailableTags, tags]);
+
+  const handleAddTag = (tagToAdd?: string) => {
+    const raw = tagToAdd || tagInput;
+    const clean = raw.trim().toLowerCase().replace(/^#/, "");
+    if (clean && !tags.includes(clean)) {
+      setTags([...tags, clean]);
+      setIsDirty(true);
+      if (!allAvailableTags.includes(clean)) {
+        setAllAvailableTags((prev) => [...prev, clean]);
+      }
+    }
+    setTagInput("");
+    setSelectedTagIndex(0);
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setTags(tags.filter((t) => t !== tagToRemove));
+    setIsDirty(true);
+  };
+
+  const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (matchingTags.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedTagIndex((idx) => (idx + 1) % matchingTags.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedTagIndex((idx) => (idx - 1 + matchingTags.length) % matchingTags.length);
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && matchingTags[selectedTagIndex]) {
+        e.preventDefault();
+        handleAddTag(matchingTags[selectedTagIndex]);
+        return;
+      }
+    }
+    if (e.key === "Enter" || e.key === "," || e.key === " ") {
+      e.preventDefault();
+      handleAddTag();
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -78,6 +154,7 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
         body: body.trim() || null,
         status,
         context_id: contextId,
+        tags,
         due_at: dueAt || null,
         followup_at: followupAt || null,
         waiting_on: waitingOn.trim() || null,
@@ -386,31 +463,115 @@ export const DetailPane: React.FC<DetailPaneProps> = ({
         </div>
 
         {/* Tags */}
-        {item.tags && item.tags.length > 0 && (
-          <div className="detail-section">
-            <label className="detail-label">Tags</label>
-            <div className="detail-tags-list">
-              {item.tags.map((t) => (
-                <span key={t} className="badge badge-tag">
-                  #{t}
-                </span>
-              ))}
-            </div>
+        <div className="detail-section">
+          <label className="detail-label">Tags (#)</label>
+          <div className="detail-tags-list" style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+            {tags.map((t) => (
+              <span key={t} className="badge badge-tag" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                #{t}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(t)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "inherit",
+                    padding: 0,
+                    lineHeight: 1,
+                    fontSize: "13px",
+                  }}
+                  title={`Remover tag #${t}`}
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
           </div>
-        )}
+
+          <div style={{ position: "relative" }}>
+            <input
+              type="text"
+              className="detail-prop-input"
+              style={{ width: "100%" }}
+              placeholder="Adicionar tag (ex: #FinOps)..."
+              value={tagInput}
+              onChange={(e) => {
+                setTagInput(e.target.value);
+                setSelectedTagIndex(0);
+              }}
+              onKeyDown={handleTagInputKeyDown}
+            />
+
+            {matchingTags.length > 0 && (
+              <div
+                className="autocomplete-dropdown"
+                style={{
+                  top: "100%",
+                  left: 0,
+                  width: "100%",
+                  marginTop: "4px",
+                  zIndex: 200,
+                }}
+              >
+                <div className="autocomplete-header">Sugestões de Tags (#)</div>
+                {matchingTags.map((mt, idx) => (
+                  <div
+                    key={mt}
+                    className={`autocomplete-item ${idx === selectedTagIndex ? "selected" : ""}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleAddTag(mt);
+                    }}
+                  >
+                    <span className="autocomplete-prefix">#</span>
+                    <span className="autocomplete-name">{mt}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Corpo / Anotações */}
-        <div className="detail-section" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-          <label className="detail-label">Descrição & Anotações</label>
-          <textarea
-            className="detail-body-textarea"
-            value={body}
-            onChange={(e) => {
-              setBody(e.target.value);
-              setIsDirty(true);
-            }}
-            placeholder="Adicione detalhes, checklists, anotações de reunião ou contexto..."
-          />
+        <div className="detail-section" style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative" }}>
+          <label className="detail-label">Descrição & Anotações (@contexto, #tag)</label>
+          <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column" }}>
+            <textarea
+              ref={bodyRef}
+              className="detail-body-textarea"
+              value={body}
+              onChange={(e) => {
+                const val = e.target.value;
+                setBody(val);
+                setIsDirty(true);
+                bodyAutocomplete.checkTrigger(val, e.target.selectionStart || val.length);
+              }}
+              onKeyUp={(e) => {
+                bodyAutocomplete.checkTrigger(body, e.currentTarget.selectionStart || body.length);
+              }}
+              onClick={(e) => {
+                bodyAutocomplete.checkTrigger(body, e.currentTarget.selectionStart || body.length);
+              }}
+              onKeyDown={(e) => {
+                if (bodyAutocomplete.isOpen) {
+                  const handled = bodyAutocomplete.handleKeyDown(e);
+                  if (handled) return;
+                }
+              }}
+              placeholder="Adicione detalhes, checklists (@contexto, #tag) ou notas..."
+            />
+
+            {bodyAutocomplete.isOpen && (
+              <AutocompleteDropdown
+                items={bodyAutocomplete.items}
+                selectedIndex={bodyAutocomplete.selectedIndex}
+                onSelect={bodyAutocomplete.handleSelect}
+                title={bodyAutocomplete.trigger === "@" ? "Contextos (@)" : "Tags (#)"}
+                style={{ bottom: "100%", left: 0, width: "100%", marginBottom: "4px" }}
+              />
+            )}
+          </div>
         </div>
 
         {/* Rodapé do Painel com datas */}
