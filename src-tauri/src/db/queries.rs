@@ -426,7 +426,62 @@ pub fn insert_item(conn: &Connection, new: &NewItem) -> Result<Item> {
 
 pub fn upsert_remote_items(conn: &Connection, items: &[Item]) -> Result<usize> {
     let mut updated = 0;
-    for item in items {
+    // Sort items so parents (parent_id == None) are upserted before child subtasks
+    let mut sorted_items = items.to_vec();
+    sorted_items.sort_by_key(|i| if i.parent_id.is_none() { 0 } else { 1 });
+
+    for item in &sorted_items {
+        // Defensive validation/normalization of kind, status, source
+        let kind = match item.kind.as_str() {
+            "task" | "link" | "note" | "ticket" => &item.kind,
+            _ => "note",
+        };
+        let status = match item.status.as_str() {
+            "inbox" | "open" | "waiting" | "done" | "dropped" => &item.status,
+            _ => "inbox",
+        };
+        let source = if item.source.trim().is_empty() {
+            "manual"
+        } else {
+            item.source.as_str()
+        };
+
+        // If parent_id is specified, verify it exists in items table
+        let parent_id = if let Some(ref pid) = item.parent_id {
+            let exists: bool = conn
+                .query_row(
+                    "SELECT 1 FROM items WHERE id = ?1",
+                    [pid],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+            if exists {
+                Some(pid.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // If context_id is specified, verify it exists in contexts table
+        let context_id = if let Some(ref cid) = item.context_id {
+            let exists: bool = conn
+                .query_row(
+                    "SELECT 1 FROM contexts WHERE id = ?1",
+                    [cid],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+            if exists {
+                Some(cid.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let rows = conn.execute(
             "INSERT INTO items (
                 id, context_id, kind, title, body, status, waiting_on,
@@ -452,28 +507,47 @@ pub fn upsert_remote_items(conn: &Connection, items: &[Item]) -> Result<usize> {
              WHERE excluded.updated_at >= items.updated_at",
             params![
                 &item.id,
-                &item.context_id,
-                &item.kind,
+                &context_id,
+                kind,
                 &item.title,
                 &item.body,
-                &item.status,
+                status,
                 &item.waiting_on,
                 &item.followup_at,
                 &item.due_at,
                 &item.ticket_ref,
                 &item.url,
                 &item.done_at,
-                &item.source,
+                source,
                 &item.origin_app,
                 &item.position,
                 &item.created_at,
                 &item.updated_at,
                 &item.deleted_at,
-                &item.parent_id,
+                &parent_id,
             ],
         )?;
         if rows > 0 {
             updated += 1;
+        }
+
+        // Also sync tags if present
+        for tag_name in &item.tags {
+            let tag_name = tag_name.trim().to_lowercase().replace(' ', "");
+            if tag_name.is_empty() {
+                continue;
+            }
+            let _ = ensure_tag(conn, &tag_name);
+            if let Ok(tag_id) = conn.query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                [&tag_name],
+                |row| row.get::<_, String>(0),
+            ) {
+                let _ = conn.execute(
+                    "INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?1, ?2)",
+                    params![&item.id, &tag_id],
+                );
+            }
         }
     }
     Ok(updated)
@@ -1571,5 +1645,82 @@ mod tests {
         let res: std::result::Result<Context, serde_json::Error> = serde_json::from_str(json);
         println!("D1 Context Deser Result: {:?}", res);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_upsert_remote_items_with_mobile_source_and_subtasks() {
+        let conn = setup();
+        let parent_id = "parent-task-1".to_string();
+        let child_id = "child-task-1".to_string();
+
+        let parent_item = Item {
+            id: parent_id.clone(),
+            context_id: None,
+            kind: "task".to_string(),
+            title: "Parent Task".to_string(),
+            body: None,
+            status: "open".to_string(),
+            waiting_on: None,
+            followup_at: None,
+            due_at: None,
+            ticket_ref: None,
+            url: None,
+            done_at: None,
+            source: "mobile".to_string(),
+            origin_app: None,
+            position: 0.0,
+            created_at: "2026-10-21T00:00:00Z".to_string(),
+            updated_at: "2026-10-21T00:00:00Z".to_string(),
+            deleted_at: None,
+            parent_id: None,
+            context_name: None,
+            context_color: None,
+            tags: vec!["mobile".to_string(), "finops".to_string()],
+            attachment_count: 0,
+            subtask_count: 0,
+            subtask_done_count: 0,
+        };
+
+        // Notice child comes BEFORE parent in slice to test parent-first sorting
+        let child_item = Item {
+            id: child_id.clone(),
+            context_id: Some("non-existent-context-id".to_string()),
+            kind: "task".to_string(),
+            title: "Child Subtask from Mobile".to_string(),
+            body: None,
+            status: "open".to_string(),
+            waiting_on: None,
+            followup_at: None,
+            due_at: None,
+            ticket_ref: None,
+            url: None,
+            done_at: None,
+            source: "mobile".to_string(),
+            origin_app: None,
+            position: 1.0,
+            created_at: "2026-10-21T00:01:00Z".to_string(),
+            updated_at: "2026-10-21T00:01:00Z".to_string(),
+            deleted_at: None,
+            parent_id: Some(parent_id.clone()),
+            context_name: None,
+            context_color: None,
+            tags: vec![],
+            attachment_count: 0,
+            subtask_count: 0,
+            subtask_done_count: 0,
+        };
+
+        let count = upsert_remote_items(&conn, &[child_item, parent_item]).unwrap();
+        assert_eq!(count, 2);
+
+        let parent_fetched = get_item_by_id(&conn, &parent_id).unwrap();
+        assert_eq!(parent_fetched.source, "mobile");
+        assert_eq!(parent_fetched.tags, vec!["mobile".to_string(), "finops".to_string()]);
+        assert_eq!(parent_fetched.subtask_count, 1);
+
+        let child_fetched = get_item_by_id(&conn, &child_id).unwrap();
+        assert_eq!(child_fetched.parent_id, Some(parent_id));
+        // Non-existent context should be safely None
+        assert_eq!(child_fetched.context_id, None);
     }
 }

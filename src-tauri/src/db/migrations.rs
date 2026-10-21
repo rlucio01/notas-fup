@@ -2,7 +2,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 
 /// Current schema version. Bump this when adding new migrations.
-const CURRENT_VERSION: i64 = 4;
+const CURRENT_VERSION: i64 = 5;
 
 /// Run all pending migrations in order.
 pub fn run_all(conn: &Connection) -> Result<()> {
@@ -32,6 +32,9 @@ pub fn run_all(conn: &Connection) -> Result<()> {
     }
     if version < 4 {
         migrate_v4(conn)?;
+    }
+    if version < 5 {
+        migrate_v5(conn)?;
     }
 
     // Update version marker.
@@ -83,8 +86,7 @@ fn migrate_v1(conn: &Connection) -> Result<()> {
             ticket_ref   TEXT,
             url          TEXT,
             done_at      TEXT,
-            source       TEXT NOT NULL DEFAULT 'manual'
-                         CHECK (source IN ('capture', 'import', 'manual')),
+            source       TEXT NOT NULL DEFAULT 'manual',
             origin_app   TEXT,
             created_at   TEXT NOT NULL,
             updated_at   TEXT NOT NULL,
@@ -241,6 +243,104 @@ fn migrate_v4(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_v5(conn: &Connection) -> Result<()> {
+    let sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='items'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let needs_migration = if let Some(s) = sql {
+        let lower = s.to_lowercase();
+        lower.contains("check (source in") || lower.contains("check(source in")
+    } else {
+        false
+    };
+
+    if needs_migration {
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+
+        conn.execute_batch(
+            "DROP TRIGGER IF EXISTS items_ai;
+             DROP TRIGGER IF EXISTS items_ad;
+             DROP TRIGGER IF EXISTS items_au;
+
+             CREATE TABLE items_new (
+                id           TEXT PRIMARY KEY,
+                context_id   TEXT,
+                kind         TEXT NOT NULL DEFAULT 'note'
+                             CHECK (kind IN ('task', 'link', 'note', 'ticket')),
+                title        TEXT NOT NULL,
+                body         TEXT,
+                status       TEXT NOT NULL DEFAULT 'inbox'
+                             CHECK (status IN ('inbox', 'open', 'waiting', 'done', 'dropped')),
+                waiting_on   TEXT,
+                followup_at  TEXT,
+                due_at       TEXT,
+                ticket_ref   TEXT,
+                url          TEXT,
+                done_at      TEXT,
+                source       TEXT NOT NULL DEFAULT 'manual',
+                origin_app   TEXT,
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL,
+                deleted_at   TEXT,
+                position     REAL NOT NULL DEFAULT 0.0,
+                parent_id    TEXT,
+                FOREIGN KEY (context_id) REFERENCES contexts(id),
+                FOREIGN KEY (parent_id) REFERENCES items(id) ON DELETE SET NULL
+             );
+
+             INSERT INTO items_new (
+                id, context_id, kind, title, body, status, waiting_on,
+                followup_at, due_at, ticket_ref, url, done_at, source,
+                origin_app, created_at, updated_at, deleted_at, position, parent_id
+             )
+             SELECT
+                id, context_id, kind, title, body, status, waiting_on,
+                followup_at, due_at, ticket_ref, url, done_at, source,
+                origin_app, created_at, updated_at, deleted_at, position, parent_id
+             FROM items;
+
+             DROP TABLE items;
+             ALTER TABLE items_new RENAME TO items;
+
+             CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
+             CREATE INDEX IF NOT EXISTS idx_items_context ON items(context_id);
+             CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id);
+             CREATE INDEX IF NOT EXISTS idx_items_followup ON items(followup_at);
+             CREATE INDEX IF NOT EXISTS idx_items_due ON items(due_at);
+             CREATE INDEX IF NOT EXISTS idx_items_waiting ON items(waiting_on);
+             CREATE INDEX IF NOT EXISTS idx_items_position ON items(position);
+
+             CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
+                 INSERT INTO items_fts(rowid, title, body, waiting_on, ticket_ref)
+                 VALUES (NEW.rowid, NEW.title, NEW.body, NEW.waiting_on, NEW.ticket_ref);
+             END;
+
+             CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
+                 INSERT INTO items_fts(items_fts, rowid, title, body, waiting_on, ticket_ref)
+                 VALUES ('delete', OLD.rowid, OLD.title, OLD.body, OLD.waiting_on, OLD.ticket_ref);
+             END;
+
+             CREATE TRIGGER items_au AFTER UPDATE ON items BEGIN
+                 INSERT INTO items_fts(items_fts, rowid, title, body, waiting_on, ticket_ref)
+                 VALUES ('delete', OLD.rowid, OLD.title, OLD.body, OLD.waiting_on, OLD.ticket_ref);
+                 INSERT INTO items_fts(rowid, title, body, waiting_on, ticket_ref)
+                 VALUES (NEW.rowid, NEW.title, NEW.body, NEW.waiting_on, NEW.ticket_ref);
+             END;
+
+             INSERT INTO items_fts(items_fts) VALUES('rebuild');",
+        )?;
+
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,5 +400,66 @@ mod tests {
             .query_row("SELECT version FROM _schema_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, CURRENT_VERSION);
+    }
+
+    #[test]
+    fn test_migrate_v5_source_constraint() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        // Simulate an older schema that had the check constraint
+        conn.execute_batch(
+            "CREATE TABLE _schema_version (version INTEGER NOT NULL DEFAULT 4);
+             CREATE TABLE contexts (
+                 id TEXT PRIMARY KEY,
+                 name TEXT NOT NULL UNIQUE,
+                 color TEXT NOT NULL DEFAULT '#6366f1',
+                 sync_enabled INTEGER NOT NULL DEFAULT 1,
+                 archived INTEGER NOT NULL DEFAULT 0,
+                 created_at TEXT NOT NULL,
+                 updated_at TEXT NOT NULL,
+                 deleted_at TEXT
+             );
+             CREATE TABLE items (
+                 id TEXT PRIMARY KEY,
+                 context_id TEXT,
+                 kind TEXT NOT NULL DEFAULT 'note',
+                 title TEXT NOT NULL,
+                 body TEXT,
+                 status TEXT NOT NULL DEFAULT 'inbox',
+                 waiting_on TEXT,
+                 followup_at TEXT,
+                 due_at TEXT,
+                 ticket_ref TEXT,
+                 url TEXT,
+                 done_at TEXT,
+                 source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('capture', 'import', 'manual')),
+                 origin_app TEXT,
+                 created_at TEXT NOT NULL,
+                 updated_at TEXT NOT NULL,
+                 deleted_at TEXT,
+                 position REAL NOT NULL DEFAULT 0.0,
+                 parent_id TEXT
+             );
+             CREATE VIRTUAL TABLE items_fts USING fts5(
+                 title, body, waiting_on, ticket_ref,
+                 content = 'items', content_rowid = 'rowid',
+                 tokenize = 'unicode61 remove_diacritics 2'
+             );",
+        ).unwrap();
+
+        // Run migrations to bump from v4 to CURRENT_VERSION (5)
+        run_all(&conn).unwrap();
+
+        // Verify version is now 5
+        let version: i64 = conn
+            .query_row("SELECT version FROM _schema_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 5);
+
+        // Verify that inserting 'mobile' source now succeeds without check constraint failure
+        let res = conn.execute(
+            "INSERT INTO items (id, title, source, created_at, updated_at) VALUES ('m1', 'Mobile Task', 'mobile', '2026-10-21T00:00:00Z', '2026-10-21T00:00:00Z')",
+            [],
+        );
+        assert!(res.is_ok(), "Inserting mobile source failed: {:?}", res.err());
     }
 }

@@ -141,7 +141,8 @@ export const Settings: React.FC<SettingsProps> = ({ theme = "dark", onThemeChang
         setSyncMsg(`Erro: ${result.error || "Falha na sincronização"}`);
       }
     } catch (err: any) {
-      setSyncMsg(`Erro: ${err.message || "Falha na sincronização"}`);
+      const msg = typeof err === "string" ? err : err?.message || String(err);
+      setSyncMsg(`Erro: ${msg || "Falha na sincronização"}`);
     } finally {
       setSyncing(false);
     }

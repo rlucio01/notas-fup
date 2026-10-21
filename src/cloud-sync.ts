@@ -145,14 +145,9 @@ export async function syncWithCloud(
 
     const pullData: { server_time: string; items: Item[]; contexts: Context[] } = await pullRes.json();
 
-    // 4. If in Tauri, apply cloud items & contexts to local SQLite
+    // 4. If in Tauri, apply cloud contexts FIRST, then items
     let pulledCount = 0;
     if (isTauri()) {
-      if (pullData.items && pullData.items.length > 0) {
-        pulledCount += await invoke<number>("sync_remote_items_cmd", {
-          itemsJson: JSON.stringify(pullData.items),
-        });
-      }
       if (pullData.contexts && pullData.contexts.length > 0) {
         try {
           await invoke<number>("sync_remote_contexts_cmd", {
@@ -161,6 +156,11 @@ export async function syncWithCloud(
         } catch (ctxErr) {
           console.warn("Falha ao mesclar contextos remotos:", ctxErr);
         }
+      }
+      if (pullData.items && pullData.items.length > 0) {
+        pulledCount += await invoke<number>("sync_remote_items_cmd", {
+          itemsJson: JSON.stringify(pullData.items),
+        });
       }
     }
 
@@ -180,11 +180,15 @@ export async function syncWithCloud(
     };
   } catch (err: any) {
     console.error("Falha na sincronização Cloudflare:", err);
+    const message =
+      typeof err === "string"
+        ? err
+        : err?.message || (err ? String(err) : "Erro desconhecido na sincronização");
     return {
       success: false,
       pushed: 0,
       pulled: 0,
-      error: err.message || "Erro desconhecido na sincronização",
+      error: message,
     };
   }
 }
